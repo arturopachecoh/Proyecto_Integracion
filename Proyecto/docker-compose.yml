@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: farma
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: farma
+    # Ajustes de memoria para un servidor de 2 GB
+    command: ["postgres", "-c", "shared_buffers=256MB", "-c", "work_mem=8MB", "-c", "max_connections=30"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data   # los datos viven aqui: NUNCA usar "docker compose down -v"
+    ports:
+      - "127.0.0.1:5433:5432"             # solo accesible desde el propio servidor
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U farma -d farma"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 512m
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000",
+              "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "*"]
+    env_file: .env
+    ports:
+      - "127.0.0.1:3000:8000"             # Nginx hace proxy a 127.0.0.1:3000
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 512m
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "worker.main"]
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    cpus: "1.0"                           # el PoW nunca puede usar mas de 1 de los 2 nucleos
+    mem_limit: 256m
+
+volumes:
+  pgdata:
