@@ -1,9 +1,11 @@
 from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
 from app.config import DATABASE_URL
 
 # Pool chico: el servidor tiene poca RAM y Postgres acepta max 30 conexiones
 engine = create_engine(DATABASE_URL, pool_size=5, max_overflow=2, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def db_ok() -> bool:

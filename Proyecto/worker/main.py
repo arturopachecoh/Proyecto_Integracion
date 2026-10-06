@@ -1,33 +1,102 @@
-"""Proceso de fondo: abastecimiento, traslados, cadena de frio y produccion.
+"""Mini worker de cadena de frio.
 
-Corre en un contenedor separado del portal, limitado a 1 nucleo,
-para que resolver el PoW nunca deje sin CPU al sitio web.
+Al inicio de cada tick sincroniza las llegadas: registra en custodia las unidades
+nuevas que aparecieron en cualquier espacio salvo cuarentena, para que los
+traslados posteriores queden trazados.
+
+Cada TICK_SECONDS revisa la recepcion y la bodega principal (que no refrigeran)
+y mueve los productos que requieren frio a la camara de frio. Si la camara
+esta llena, los manda a la bodega externa (refrigerada, pero cobra por hora).
+
+NO revisa el area de acondicionamiento a proposito: ahi hay insumos frios que
+se dejaron para fabricar, y sacarlos arruinaria la fabricacion. Los productos
+frios que nacen en acondicionamiento los mueve el script de fabricacion.
 """
 import logging
 import os
 import time
 
-from app.db import db_ok
+import httpx
+
+from app import custodia, farma_client
+from app import espacios as esp
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("worker")
+logging.getLogger("httpx").setLevel(logging.WARNING)
+log = logging.getLogger("frio")
 
-TICK_SECONDS = 30
+TICK_SECONDS = 20          # 1% de vida util por minuto: hay que reaccionar rapido
+MAX_MOVES_PER_TICK = 100   # el rate limit es 250 requests por minuto
+CATALOG_REFRESH = 3600     # recargar catalogo cada hora
+# Todos menos cuarentena: las compras que no caben en recepcion, el sandbox y
+# parte de lo fabricado llegan directo a la bodega externa u otros espacios
+ESPACIOS_LLEGADA = ("checkIn", "bodega", "cold", "buffer", "packaging", "checkOut")
 
 
-def tick():
-    # TODO: revisar inventario, mover productos frios, reponer insumos, producir
-    log.info("tick - db_ok=%s", db_ok())
+def sincronizar_llegadas():
+    for espacio in ESPACIOS_LLEGADA:
+        store_id = esp.store_id(espacio)
+        for item in farma_client.space_inventory(store_id):
+            productos = farma_client.space_products(store_id, item["sku"], limit=200)
+            custodia.registrar_llegadas(productos, espacio)
+
+
+def tick(skus_frio: set[str]):
+    try:
+        sincronizar_llegadas()
+    except Exception:
+        # Si falla, igual hay que mover al frio: la cadena de frio va primero
+        log.exception("Error sincronizando llegadas")
+
+    libres = esp.libres("cold")
+    movidos = 0
+
+    for origen in ("checkIn", "bodega"):
+        store_id = esp.store_id(origen)
+        for item in farma_client.space_inventory(store_id):
+            sku = item["sku"]
+            if sku not in skus_frio:
+                continue
+            productos = farma_client.space_products(store_id, sku, limit=200)
+            # Por si alguna unidad llego despues de la sincronizacion: asi nunca
+            # se mueve algo que no este en custodia (ignora las ya conocidas)
+            custodia.registrar_llegadas(productos, origen)
+            for p in productos:
+                if movidos >= MAX_MOVES_PER_TICK:
+                    log.warning("Limite de movimientos por tick alcanzado; sigo en el proximo")
+                    return
+                destino = "cold" if libres > 0 else "buffer"
+                try:
+                    farma_client.move_product(p["_id"], esp.store_id(destino))
+                except httpx.HTTPStatusError as e:
+                    log.error("No se pudo mover %s (%s): %s", p["_id"], sku, e.response.text)
+                    if e.response.status_code == 429:
+                        return  # rate limit: esperar al proximo tick
+                    continue
+                movidos += 1
+                if destino == "cold":
+                    libres -= 1
+                custodia.registrar_traslado(p["_id"], destino)
+                log.info("Movido %s %s: %s -> %s", sku, p["_id"], origen, destino)
+
+    if movidos:
+        log.info("Tick: %d productos movidos al frio. Libres en camara: %d", movidos, libres)
 
 
 def main():
-    os.nice(10)  # prioridad baja: si compite por CPU, gana el portal
-    log.info("worker iniciado")
+    os.nice(10)  # prioridad baja frente al portal
+    log.info("Worker de frio iniciado")
+    skus_frio, cargado = set(), 0
     while True:
         try:
-            tick()
+            if time.time() - cargado > CATALOG_REFRESH:
+                catalogo = farma_client.available_products()
+                skus_frio = {p["sku"] for p in catalogo if p["storage"]["cold"]}
+                cargado = time.time()
+                log.info("SKUs que requieren frio: %s", sorted(skus_frio))
+            tick(skus_frio)
         except Exception:
-            log.exception("error en tick")  # un error no debe matar el worker
+            log.exception("Error en tick")  # un error no debe matar el worker
         time.sleep(TICK_SECONDS)
 
 

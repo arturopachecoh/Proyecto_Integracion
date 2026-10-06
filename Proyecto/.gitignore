@@ -1,0 +1,15 @@
+# Credenciales: nunca al repo (usar .env.example como plantilla)
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Editores
+.vscode/
+.idea/
