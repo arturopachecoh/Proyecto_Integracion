@@ -11,7 +11,11 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 
 from app.db import SessionLocal
-from app.models import Consumo, Lote, Movimiento, Solicitud, Unidad, Venta, VentaUnidad
+from sqlalchemy import func as sqlfunc
+
+from app.models import (
+    Consumo, Lote, LotRelation, Movimiento, Solicitud, Unidad, Venta, VentaItem, VentaUnidad,
+)
 
 log = logging.getLogger("custodia")
 
@@ -146,7 +150,32 @@ def _crear_lote(s, codigo: str, sku: str, unidades: list[dict]) -> Lote | None:
     s.add(lote)
     sol.estado = "recibida"
     s.flush()
+    if sol.tipo == "fabricacion":
+        _materializar_relaciones(s, sol.id, lote.id)
     return lote
+
+
+def _materializar_relaciones(s, solicitud_id: int, child_lote_id: int) -> None:
+    """Agrega lot_relations a partir de los consumos de la fabricacion."""
+    filas = s.execute(
+        select(Consumo.lote_id, sqlfunc.count())
+        .where(Consumo.solicitud_id == solicitud_id)
+        .group_by(Consumo.lote_id)
+    ).all()
+    for parent_id, cantidad in filas:
+        existe = s.scalar(
+            select(LotRelation.id).where(
+                LotRelation.parent_lote_id == parent_id,
+                LotRelation.child_lote_id == child_lote_id,
+            )
+        )
+        if existe is None:
+            s.add(LotRelation(
+                parent_lote_id=parent_id,
+                child_lote_id=child_lote_id,
+                cantidad=int(cantidad),
+                solicitud_id=solicitud_id,
+            ))
 
 
 # ---------------------------------------------------------------------------
@@ -190,18 +219,29 @@ def registrar_vencidas(unidad_ids: list[str]) -> None:
 # ---------------------------------------------------------------------------
 
 def crear_venta(comprador_nombre: str, comprador_email: str, total: int,
-                canal: str = "portal", orden_externa_id: str | None = None) -> int:
+                canal: str = "portal", orden_externa_id: str | None = None,
+                items: list[dict] | None = None,
+                transaccion_id: str | None = None) -> int:
+    """items: [{sku, cantidad, precio_unitario}, ...]"""
     with SessionLocal.begin() as s:
         v = Venta(comprador_nombre=comprador_nombre, comprador_email=comprador_email,
-                  total=total, canal=canal, orden_externa_id=orden_externa_id)
+                  total=total, canal=canal, orden_externa_id=orden_externa_id,
+                  transaccion_id=transaccion_id)
         s.add(v)
         s.flush()
+        for item in items or []:
+            s.add(VentaItem(
+                venta_id=v.id,
+                sku=item["sku"],
+                cantidad=item["cantidad"],
+                precio_unitario=item["precio_unitario"],
+            ))
         return v.id
 
 
 def asignar_unidades_a_venta(venta_id: int, unidad_ids: list[str]) -> None:
     """Paso 1 del despacho: se anota la intencion ANTES de llamar a la API.
-    Las unidades quedan apartadas (estado pendiente) para esta venta."""
+    Las unidades quedan reservadas para esta venta."""
     with SessionLocal.begin() as s:
         for u in s.scalars(select(Unidad).where(Unidad.id.in_(unidad_ids))):
             if u.estado != "en_stock":
@@ -210,6 +250,21 @@ def asignar_unidades_a_venta(venta_id: int, unidad_ids: list[str]) -> None:
                               estado="pendiente"))
             s.add(Movimiento(unidad_id=u.id, lote_id=u.lote_id, tipo="venta",
                              desde=u.espacio_actual, hacia=u.espacio_actual, venta_id=venta_id))
+            u.estado = "reservada"
+
+
+def liberar_reserva(venta_id: int) -> None:
+    """Pago cancelado o con error: las unidades vuelven a estar vendibles."""
+    with SessionLocal.begin() as s:
+        filas = list(s.scalars(select(VentaUnidad).where(VentaUnidad.venta_id == venta_id)))
+        for vu in filas:
+            u = s.get(Unidad, vu.unidad_id)
+            if u is not None and u.estado == "reservada":
+                u.estado = "en_stock"
+            s.delete(vu)
+        v = s.get(Venta, venta_id)
+        if v is not None and v.estado == "pendiente_pago":
+            v.estado = "cancelada"
 
 
 def confirmar_despacho(unidad_id: str) -> None:
@@ -288,3 +343,18 @@ def unidades_en(espacio: str) -> list[Unidad]:
     with SessionLocal() as s:
         return list(s.scalars(select(Unidad).where(Unidad.espacio_actual == espacio,
                                                    Unidad.estado == "en_stock")))
+
+
+def stock_disponible(sku: str, margen: timedelta = timedelta(hours=1)) -> int:
+    """Unidades vendibles de un SKU (en stock, no vencidas, en espacios usables)."""
+    with SessionLocal() as s:
+        return s.scalar(
+            select(sqlfunc.count())
+            .select_from(Unidad)
+            .where(
+                Unidad.sku == sku,
+                Unidad.estado == "en_stock",
+                Unidad.espacio_actual.in_(ESPACIOS_USABLES),
+                (Unidad.vence_en.is_(None)) | (Unidad.vence_en > _ahora() + margen),
+            )
+        ) or 0
