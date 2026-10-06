@@ -13,6 +13,7 @@ export default function Carrito() {
   const [kits, setKits] = useState<Kit[]>([]);
   const [errores, setErrores] = useState<string[]>([]);
   const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
 
   const refresh = () => setItems(leerCarrito());
   useEffect(() => {
@@ -26,21 +27,23 @@ export default function Carrito() {
       setErrores([]);
       return;
     }
+    setLoading(true);
     validarCarrito(items.map((i) => ({ sku: i.sku, cantidad: i.cantidad })))
       .then((r) => {
         setTotal(r.total);
         setErrores(r.errores);
       })
-      .catch((e) => setErrores([String(e.message || e)]));
+      .catch((e) => setErrores([String(e.message || e)]))
+      .finally(() => setLoading(false));
   }, [items]);
 
-  const stockDe = (sku: string) => kits.find((k) => k.sku === sku)?.stock ?? 99;
+  const stockDe = (sku: string) => kits.find((k) => k.sku === sku)?.stock ?? 0;
 
   return (
     <>
       <h1>Carro de compras</h1>
       {items.length === 0 ? (
-        <p>El carro está vacío. <Link to="/">Volver al catálogo</Link></p>
+        <p className="empty">El carro está vacío. <Link to="/">Volver al catálogo</Link></p>
       ) : (
         <>
           <table className="table">
@@ -49,20 +52,21 @@ export default function Carrito() {
                 <th>Producto</th>
                 <th>Precio</th>
                 <th>Cantidad</th>
+                <th>Subtotal</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {items.map((i) => (
                 <tr key={i.sku}>
-                  <td>{i.nombre}<div className="stock">{i.sku}</div></td>
+                  <td>{i.nombre}<div className="stock">{i.sku} · máx. {stockDe(i.sku)}</div></td>
                   <td>{i.precio != null ? clp(i.precio) : "—"}</td>
                   <td>
                     <input
                       className="qty"
                       type="number"
                       min={1}
-                      max={stockDe(i.sku)}
+                      max={Math.max(1, stockDe(i.sku))}
                       value={i.cantidad}
                       aria-label={`Cantidad de ${i.nombre}`}
                       onChange={(e) => {
@@ -71,6 +75,7 @@ export default function Carrito() {
                       }}
                     />
                   </td>
+                  <td>{i.precio != null ? clp(i.precio * i.cantidad) : "—"}</td>
                   <td>
                     <button type="button" className="danger" onClick={() => { quitar(i.sku); refresh(); }}>
                       <FiTrash2 /> Quitar
@@ -80,9 +85,12 @@ export default function Carrito() {
               ))}
             </tbody>
           </table>
+          {loading && <p className="muted">Validando stock y precio vigente…</p>}
           {errores.map((e) => <p key={e} className="error" role="alert">{e}</p>)}
           <p className="precio">Total: {clp(total)}</p>
-          <Link className="btn" to="/checkout">Confirmar compra</Link>
+          {errores.length
+            ? <button type="button" disabled>Corrige el carro para pagar</button>
+            : <Link className="btn" to="/checkout">Confirmar compra</Link>}
         </>
       )}
     </>

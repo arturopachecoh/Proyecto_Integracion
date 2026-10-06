@@ -26,7 +26,7 @@ export default function App() {
       <header className="top">
         <strong>Distribuidora 4</strong>
         <nav>
-          <NavLink to="/"><FiPackage /> Catálogo</NavLink>
+          <NavLink to="/" end><FiPackage /> Catálogo</NavLink>
           <NavLink to="/carrito"><FiShoppingCart /> Carro{n > 0 && <span className="badge">{n}</span>}</NavLink>
           <NavLink to="/trazabilidad"><FiSearch /> Trazabilidad</NavLink>
         </nav>

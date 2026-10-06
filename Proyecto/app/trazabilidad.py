@@ -228,6 +228,21 @@ def consultar(codigo: str) -> dict | None:
                 .group_by(Unidad.espacio_actual)
             ).all()
         )
+        por_estado = dict(
+            s.execute(
+                select(Unidad.estado, func.count())
+                .where(Unidad.lote_id == lote.id)
+                .group_by(Unidad.estado)
+            ).all()
+        )
+        vence_stock = s.scalar(
+            select(func.min(Unidad.vence_en)).where(
+                Unidad.lote_id == lote.id,
+                Unidad.estado.in_(("en_stock", "reservada")),
+                Unidad.vence_en.is_not(None),
+            )
+        )
+        total_unidades = sum(por_estado.values()) if por_estado else 0
         paso_frio = s.scalar(
             select(Movimiento.id)
             .where(
@@ -240,10 +255,22 @@ def consultar(codigo: str) -> dict | None:
         arriba = _recorrer(s, lote.id, "upstream")
         abajo = _recorrer(s, lote.id, "downstream")
         ids_abajo = [lote.id] + [n["id"] for n in abajo]
+        clientes = _clientes(s, [lote.id])
         return {
             "lote": _serializar_lote(lote),
             "conservacion": conservacion,
             "espacios": {k: v for k, v in ocupacion.items()},
+            "estado_unidades": {
+                "en_stock": por_estado.get("en_stock", 0),
+                "reservada": por_estado.get("reservada", 0),
+                "consumida": por_estado.get("consumida", 0),
+                "despachada": por_estado.get("despachada", 0),
+                "vencida": por_estado.get("vencida", 0),
+                "cuarentena": por_estado.get("cuarentena", 0),
+            },
+            "unidades_producidas": lote.cantidad_inicial or total_unidades,
+            "vence_en_efectivo": (vence_stock or lote.vence_en).isoformat()
+            if (vence_stock or lote.vence_en) else None,
             "unidades_inventario": [
                 {
                     "id": u.id,
@@ -259,6 +286,18 @@ def consultar(codigo: str) -> dict | None:
             ],
             "aguas_arriba": arriba,
             "aguas_abajo": abajo,
-            "clientes": _clientes(s, [lote.id]),
+            "clientes": clientes,
             "clientes_derivados": _clientes(s, ids_abajo),
+            "entregas": [
+                {
+                    "venta_id": c["venta_id"],
+                    "comprador_nombre": c["comprador_nombre"],
+                    "comprador_email": c["comprador_email"],
+                    "estado": c["estado"],
+                    "transaccion_id": c["transaccion_id"],
+                    "unidades": len(c["unidades"]),
+                    "sku": (c["unidades"][0]["sku"] if c["unidades"] else lote.sku),
+                }
+                for c in clientes
+            ],
         }

@@ -70,9 +70,11 @@ def _mapa_precios() -> dict[str, int]:
 
 
 def _es_kit(sku: str, cat: dict[str, dict]) -> bool:
+    prod = cat.get(sku) or {}
+    if "sellable" in prod:
+        return bool(prod["sellable"])
     if sku.startswith("KIT"):
         return True
-    prod = cat.get(sku) or {}
     comps = prod.get("components") or []
     if not comps:
         return False

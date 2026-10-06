@@ -8,3 +8,8 @@ graphify-out
 .env
 *.md
 docs
+package.json
+package-lock.json
+node_modules
+playwright.config.ts
+tests

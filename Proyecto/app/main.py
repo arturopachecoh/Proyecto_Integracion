@@ -90,7 +90,7 @@ def api_checkout_mock(venta_id: int):
 
 @app.post("/api/checkout/confirmar")
 def api_checkout_confirmar(body: ConfirmarIn):
-    if body.resultado not in {"exito", "cancelado", "error"}:
+    if ventas.normalizar_resultado(body.resultado) is None:
         raise HTTPException(status_code=400, detail="resultado inválido")
     try:
         return ventas.finalizar(body.venta_id, body.resultado)

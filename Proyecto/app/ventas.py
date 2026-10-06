@@ -63,16 +63,33 @@ def iniciar_checkout(nombre: str, email: str, items: list[dict]) -> dict:
 
         urls = {
             "success": f"{PUBLIC_BASE_URL}/pago/exito?venta={venta_id}",
-            "cancel": f"{PUBLIC_BASE_URL}/pago/cancelado?venta={venta_id}",
             "error": f"{PUBLIC_BASE_URL}/pago/error?venta={venta_id}",
+            "cancelled": f"{PUBLIC_BASE_URL}/pago/cancelado?venta={venta_id}",
         }
         tx = checkout.crear_transaccion(validado["total"], venta_id, urls)
         custodia.marcar_pago(venta_id, "pendiente_pago", transaccion_id=tx["id"])
         return {"venta_id": venta_id, "redirect_url": tx["redirect_url"], "transaccion_id": tx["id"]}
 
 
+RESULTADO_PAGO = {
+    "exito": "exito",
+    "success": "exito",
+    "cancelado": "cancelado",
+    "cancelled": "cancelado",
+    "cancel": "cancelado",
+    "error": "error",
+}
+
+
+def normalizar_resultado(resultado: str) -> str | None:
+    return RESULTADO_PAGO.get((resultado or "").strip().lower())
+
+
 def finalizar(venta_id: int, resultado: str) -> dict:
-    """Idempotente. resultado: exito | cancelado | error."""
+    """Idempotente. resultado: exito | cancelado | error (también aliases Integrapay)."""
+    resultado = normalizar_resultado(resultado) or ""
+    if resultado not in {"exito", "cancelado", "error"}:
+        raise ValueError("resultado inválido")
     venta = custodia.venta(venta_id)
     if venta is None:
         raise ValueError("Venta no encontrada")

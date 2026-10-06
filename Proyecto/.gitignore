@@ -21,3 +21,7 @@ graphify-out/
 # Frontend
 web/node_modules/
 web/dist/
+# Playwright e2e (local)
+/node_modules/
+test-results/
+playwright-report/
