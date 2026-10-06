@@ -1,0 +1,15 @@
+---
+description: Modelo de custodia y genealogía N:M
+alwaysApply: true
+---
+
+# Traceability model
+
+`app/custodia.py` is the only writer of custody tables.
+
+- Units: `unidades` (current state). History: `movimientos`.
+- Genealogy: `consumos` (unit consumed) plus `lot_relations` (parent_lote → child_lote, quantity).
+- Do not add `lotes.parent_id`. Do not rename tables to English for E1.
+- Sales reserve with `estado=reservada` before payment; release on cancel/error.
+- Answer the four questions in `app/trazabilidad.py` using Postgres only (CTE), not Farma.
+- After schema changes, add a new Alembic revision; never edit an applied migration.
