@@ -9,4 +9,5 @@ FARMA_GROUP = int(os.getenv("FARMA_GROUP", "0"))
 FARMA_API_KEY = os.getenv("FARMA_API_KEY", "")
 
 CHECKOUT_BASE_URL = os.getenv("CHECKOUT_BASE_URL", "")
+CHECKOUT_MODE = os.getenv("CHECKOUT_MODE", "mock")  # mock | real
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:3000")

@@ -17,3 +17,6 @@ venv/
 # Índices locales de agentes (regenerables)
 graphify-out/
 .codebase-memory/
+
+# Frontend
+web/node_modules/
