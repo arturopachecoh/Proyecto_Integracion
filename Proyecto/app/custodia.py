@@ -288,3 +288,14 @@ def unidades_en(espacio: str) -> list[Unidad]:
     with SessionLocal() as s:
         return list(s.scalars(select(Unidad).where(Unidad.espacio_actual == espacio,
                                                    Unidad.estado == "en_stock")))
+
+
+def fabricaciones_en_camino() -> int:
+    """Unidades de productos fabricados que aun no nacen (ocuparan acondicionamiento)."""
+    from sqlalchemy import func as f
+    with SessionLocal() as s:
+        return s.scalar(
+            select(f.coalesce(f.sum(Solicitud.cantidad), 0))
+            .where(Solicitud.tipo == "fabricacion", Solicitud.estado == "pendiente",
+                   Solicitud.llega_en > _ahora() - timedelta(minutes=30))
+        )

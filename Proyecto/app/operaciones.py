@@ -31,6 +31,10 @@ class FaltanInsumos(Exception):
         super().__init__(f"No hay suficientes componentes ({detalle})")
 
 
+class SinEspacio(Exception):
+    """Farma Central rechazo un movimiento: el espacio de destino esta lleno."""
+
+
 # ---------------------------------------------------------------------------
 # Catalogo
 # ---------------------------------------------------------------------------
@@ -178,7 +182,12 @@ def fabricar(sku: str, cantidad: int) -> int:
         frias_movidas = []
         try:
             for u in por_mover:
-                mover(u.id, "packaging")
+                try:
+                    mover(u.id, "packaging")
+                except httpx.HTTPStatusError as e:
+                    if e.response.status_code == 400:
+                        raise SinEspacio(f"Acondicionamiento lleno al mover insumos de {sku}") from e
+                    raise
                 if es_frio(u.sku):
                     frias_movidas.append(u)
         except Exception:
