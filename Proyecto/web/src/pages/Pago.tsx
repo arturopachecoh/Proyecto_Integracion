@@ -1,4 +1,5 @@
-import { Link, useParams } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 const COPY: Record<string, { titulo: string; texto: string }> = {
   exito: {
@@ -17,11 +18,28 @@ const COPY: Record<string, { titulo: string; texto: string }> = {
 
 export default function Pago() {
   const { estado = "error" } = useParams();
+  const [params] = useSearchParams();
+  const venta = params.get("venta");
+  const [detalle, setDetalle] = useState("");
   const info = COPY[estado] || COPY.error;
+
+  useEffect(() => {
+    if (!venta) return;
+    fetch("/api/checkout/confirmar", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ venta_id: Number(venta), resultado: estado }),
+    })
+      .then((r) => r.json())
+      .then((d) => setDetalle(d.estado ? `Pedido #${d.venta_id} · ${d.estado}` : ""))
+      .catch(() => undefined);
+  }, [venta, estado]);
+
   return (
     <>
       <h1>{info.titulo}</h1>
       <p className="lead">{info.texto}</p>
+      {detalle && <p>{detalle}</p>}
       <p>
         <Link to="/">Volver al catálogo</Link>
         {" · "}

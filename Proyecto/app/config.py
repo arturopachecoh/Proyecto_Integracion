@@ -10,4 +10,6 @@ FARMA_API_KEY = os.getenv("FARMA_API_KEY", "")
 
 CHECKOUT_BASE_URL = os.getenv("CHECKOUT_BASE_URL", "")
 CHECKOUT_MODE = os.getenv("CHECKOUT_MODE", "mock")  # mock | real
+CHECKOUT_FORCE = os.getenv("CHECKOUT_FORCE", "")  # exito | cancelado | error
+DISPATCH_FARMA = os.getenv("DISPATCH_FARMA", "0") == "1"
 PUBLIC_BASE_URL = os.getenv("PUBLIC_BASE_URL", "http://localhost:3000")
