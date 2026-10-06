@@ -13,3 +13,7 @@ venv/
 # Editores
 .vscode/
 .idea/
+
+# Índices locales de agentes (regenerables)
+graphify-out/
+.codebase-memory/
