@@ -2,13 +2,14 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import catalogo, trazabilidad
-from app.config import FARMA_ENV
+from app import catalogo, trazabilidad, ventas
+from app.config import FARMA_ENV, PUBLIC_BASE_URL
 from app.db import db_ok
+from app.integrations.checkout import resultado_mock
 
 app = FastAPI(title="Distribuidora 4")
 app.add_middleware(
@@ -28,6 +29,17 @@ class ItemCarrito(BaseModel):
 
 class CarritoIn(BaseModel):
     items: list[ItemCarrito]
+
+
+class CheckoutIn(BaseModel):
+    comprador_nombre: str = Field(min_length=1)
+    comprador_email: str = Field(min_length=3)
+    items: list[ItemCarrito]
+
+
+class ConfirmarIn(BaseModel):
+    venta_id: int
+    resultado: str
 
 
 def _spa_index() -> str | None:
@@ -50,6 +62,40 @@ def api_catalogo():
 @app.post("/api/carrito/validar")
 def api_validar_carrito(body: CarritoIn):
     return catalogo.validar_carrito([item.model_dump() for item in body.items])
+
+
+@app.post("/api/checkout")
+def api_checkout(body: CheckoutIn):
+    try:
+        return ventas.iniciar_checkout(
+            body.comprador_nombre.strip(),
+            body.comprador_email.strip(),
+            [item.model_dump() for item in body.items],
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+
+
+@app.get("/api/checkout/mock/{venta_id}")
+def api_checkout_mock(venta_id: int):
+    resultado = resultado_mock()
+    try:
+        ventas.finalizar(venta_id, resultado)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return RedirectResponse(f"{PUBLIC_BASE_URL}/pago/{resultado}?venta={venta_id}", status_code=302)
+
+
+@app.post("/api/checkout/confirmar")
+def api_checkout_confirmar(body: ConfirmarIn):
+    if body.resultado not in {"exito", "cancelado", "error"}:
+        raise HTTPException(status_code=400, detail="resultado inválido")
+    try:
+        return ventas.finalizar(body.venta_id, body.resultado)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
 
 
 @app.get("/api/trazabilidad/{codigo}")

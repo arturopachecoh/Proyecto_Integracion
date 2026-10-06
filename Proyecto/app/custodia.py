@@ -256,15 +256,54 @@ def asignar_unidades_a_venta(venta_id: int, unidad_ids: list[str]) -> None:
 def liberar_reserva(venta_id: int) -> None:
     """Pago cancelado o con error: las unidades vuelven a estar vendibles."""
     with SessionLocal.begin() as s:
-        filas = list(s.scalars(select(VentaUnidad).where(VentaUnidad.venta_id == venta_id)))
+        filas = list(s.scalars(
+            select(VentaUnidad).where(
+                VentaUnidad.venta_id == venta_id,
+                VentaUnidad.estado == "pendiente",
+            )
+        ))
         for vu in filas:
             u = s.get(Unidad, vu.unidad_id)
             if u is not None and u.estado == "reservada":
                 u.estado = "en_stock"
             s.delete(vu)
+
+
+def marcar_pago(venta_id: int, estado: str, transaccion_id: str | None = None) -> None:
+    with SessionLocal.begin() as s:
         v = s.get(Venta, venta_id)
-        if v is not None and v.estado == "pendiente_pago":
-            v.estado = "cancelada"
+        if v is None:
+            raise ValueError(f"Venta {venta_id} no existe")
+        if transaccion_id:
+            v.transaccion_id = transaccion_id
+        if v.estado == "pagada":
+            return
+        v.estado = estado
+        if estado == "pagada":
+            v.pagada_en = _ahora()
+
+
+def venta(venta_id: int) -> dict | None:
+    with SessionLocal() as s:
+        v = s.get(Venta, venta_id)
+        if v is None:
+            return None
+        return {
+            "id": v.id,
+            "estado": v.estado,
+            "total": v.total,
+            "transaccion_id": v.transaccion_id,
+            "comprador_nombre": v.comprador_nombre,
+            "comprador_email": v.comprador_email,
+        }
+
+
+def venta_por_transaccion(tx_id: str) -> dict | None:
+    with SessionLocal() as s:
+        v = s.scalar(select(Venta).where(Venta.transaccion_id == tx_id))
+        if v is None:
+            return None
+        return venta(v.id)
 
 
 def confirmar_despacho(unidad_id: str) -> None:
@@ -272,6 +311,8 @@ def confirmar_despacho(unidad_id: str) -> None:
     with SessionLocal.begin() as s:
         vu = s.scalar(select(VentaUnidad).where(VentaUnidad.unidad_id == unidad_id))
         u = s.get(Unidad, unidad_id)
+        if vu is None or u is None:
+            raise ValueError(f"No hay despacho pendiente para {unidad_id}")
         vu.estado = "despachada"
         vu.despachada_en = _ahora()
         s.add(Movimiento(unidad_id=u.id, lote_id=u.lote_id, tipo="despacho",

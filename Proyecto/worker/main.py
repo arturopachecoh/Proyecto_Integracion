@@ -18,7 +18,7 @@ import time
 
 import httpx
 
-from app import custodia, farma_client
+from app import custodia, farma_client, ventas
 from app import espacios as esp
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -114,6 +114,7 @@ def main():
                 cargado = time.time()
                 log.info("SKUs que requieren frio: %s", sorted(skus_frio))
             tick(skus_frio)
+            ventas.recuperar_pendientes()
         except Exception:
             log.exception("Error en tick")  # un error no debe matar el worker
         time.sleep(TICK_SECONDS)
