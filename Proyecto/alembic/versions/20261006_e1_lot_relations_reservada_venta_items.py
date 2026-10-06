@@ -18,11 +18,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.drop_constraint("ck_unidades_estado_unidad", "unidades", type_="check")
-    op.create_check_constraint(
-        "ck_unidades_estado_unidad",
-        "unidades",
-        "estado IN ('en_stock', 'reservada', 'consumida', 'despachada', 'vencida', 'cuarentena')",
+    # El naming convention de SQLAlchemy duplica el prefijo ck_ si se usa op.drop_constraint.
+    op.execute("ALTER TABLE unidades DROP CONSTRAINT IF EXISTS ck_unidades_estado_unidad")
+    op.execute("ALTER TABLE unidades DROP CONSTRAINT IF EXISTS estado_unidad")
+    op.execute(
+        """
+        ALTER TABLE unidades ADD CONSTRAINT ck_unidades_estado_unidad
+        CHECK (estado IN ('en_stock', 'reservada', 'consumida', 'despachada', 'vencida', 'cuarentena'))
+        """
     )
 
     op.create_table(
@@ -87,9 +90,10 @@ def downgrade() -> None:
     op.drop_index(op.f("ix_lot_relations_parent_lote_id"), table_name="lot_relations")
     op.drop_index(op.f("ix_lot_relations_child_lote_id"), table_name="lot_relations")
     op.drop_table("lot_relations")
-    op.drop_constraint("ck_unidades_estado_unidad", "unidades", type_="check")
-    op.create_check_constraint(
-        "ck_unidades_estado_unidad",
-        "unidades",
-        "estado IN ('en_stock', 'consumida', 'despachada', 'vencida', 'cuarentena')",
+    op.execute("ALTER TABLE unidades DROP CONSTRAINT IF EXISTS ck_unidades_estado_unidad")
+    op.execute(
+        """
+        ALTER TABLE unidades ADD CONSTRAINT ck_unidades_estado_unidad
+        CHECK (estado IN ('en_stock', 'consumida', 'despachada', 'vencida', 'cuarentena'))
+        """
     )

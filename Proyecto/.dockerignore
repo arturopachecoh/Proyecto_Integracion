@@ -1,0 +1,10 @@
+.git
+.venv
+**/__pycache__
+**/*.pyc
+web/node_modules
+graphify-out
+.codebase-memory
+.env
+*.md
+docs

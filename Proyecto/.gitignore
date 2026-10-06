@@ -20,3 +20,4 @@ graphify-out/
 
 # Frontend
 web/node_modules/
+web/dist/
