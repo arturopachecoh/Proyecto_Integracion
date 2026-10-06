@@ -158,50 +158,64 @@ def aguas_arriba(codigo: str) -> list[dict] | None:
         return _recorrer(s, lote.id, "upstream")
 
 
+def _clientes(s, lote_ids: list[int]) -> list[dict]:
+    if not lote_ids:
+        return []
+    filas = s.execute(
+        select(
+            Venta.id,
+            Venta.comprador_nombre,
+            Venta.comprador_email,
+            Venta.estado,
+            Venta.transaccion_id,
+            Venta.pagada_en,
+            Venta.creada_en,
+            VentaUnidad.unidad_id,
+            VentaUnidad.lote_id,
+            VentaUnidad.estado.label("estado_despacho"),
+            Lote.codigo,
+            Lote.sku,
+        )
+        .join(VentaUnidad, VentaUnidad.venta_id == Venta.id)
+        .join(Lote, Lote.id == VentaUnidad.lote_id)
+        .where(VentaUnidad.lote_id.in_(lote_ids))
+        .order_by(Venta.id, VentaUnidad.unidad_id)
+    ).all()
+    por_venta: dict[int, dict] = {}
+    for f in filas:
+        venta = por_venta.setdefault(f.id, {
+            "venta_id": f.id,
+            "comprador_nombre": f.comprador_nombre,
+            "comprador_email": f.comprador_email,
+            "estado": f.estado,
+            "transaccion_id": f.transaccion_id,
+            "pagada_en": f.pagada_en.isoformat() if f.pagada_en else None,
+            "creada_en": f.creada_en.isoformat() if f.creada_en else None,
+            "unidades": [],
+        })
+        venta["unidades"].append({
+            "id": f.unidad_id,
+            "lote_codigo": f.codigo,
+            "sku": f.sku,
+            "estado_despacho": f.estado_despacho,
+        })
+    return list(por_venta.values())
+
+
 def clientes_del_lote(codigo: str) -> list[dict] | None:
     """Pregunta 3: a qué clientes se entregaron unidades del lote X."""
     with SessionLocal() as s:
         lote = _lote_por_codigo(s, codigo)
         if lote is None:
             return None
-        filas = s.execute(
-            select(
-                Venta.id,
-                Venta.comprador_nombre,
-                Venta.comprador_email,
-                Venta.estado,
-                Venta.transaccion_id,
-                Venta.pagada_en,
-                Venta.creada_en,
-                VentaUnidad.unidad_id,
-                VentaUnidad.estado.label("estado_despacho"),
-            )
-            .join(VentaUnidad, VentaUnidad.venta_id == Venta.id)
-            .where(VentaUnidad.lote_id == lote.id)
-            .order_by(Venta.id, VentaUnidad.unidad_id)
-        ).all()
-        por_venta: dict[int, dict] = {}
-        for f in filas:
-            venta = por_venta.setdefault(f.id, {
-                "venta_id": f.id,
-                "comprador_nombre": f.comprador_nombre,
-                "comprador_email": f.comprador_email,
-                "estado": f.estado,
-                "transaccion_id": f.transaccion_id,
-                "pagada_en": f.pagada_en.isoformat() if f.pagada_en else None,
-                "creada_en": f.creada_en.isoformat() if f.creada_en else None,
-                "unidades": [],
-            })
-            venta["unidades"].append({
-                "id": f.unidad_id,
-                "estado_despacho": f.estado_despacho,
-            })
-        return list(por_venta.values())
+        return _clientes(s, [lote.id])
 
 
 def consultar(codigo: str) -> dict | None:
     """Respuesta completa para el visor y para GET /api/trazabilidad."""
     from sqlalchemy import func
+
+    from app.models import Movimiento
 
     with SessionLocal() as s:
         lote = _lote_por_codigo(s, codigo)
@@ -214,7 +228,18 @@ def consultar(codigo: str) -> dict | None:
                 .group_by(Unidad.espacio_actual)
             ).all()
         )
-        conservacion = "frio" if ocupacion.get("cold") or ocupacion.get("buffer") else "ambiente"
+        paso_frio = s.scalar(
+            select(Movimiento.id)
+            .where(
+                Movimiento.lote_id == lote.id,
+                Movimiento.hacia.in_(("cold", "buffer")),
+            )
+            .limit(1)
+        )
+        conservacion = "frio" if paso_frio or ocupacion.get("cold") or ocupacion.get("buffer") else "ambiente"
+        arriba = _recorrer(s, lote.id, "upstream")
+        abajo = _recorrer(s, lote.id, "downstream")
+        ids_abajo = [lote.id] + [n["id"] for n in abajo]
         return {
             "lote": _serializar_lote(lote),
             "conservacion": conservacion,
@@ -232,7 +257,8 @@ def consultar(codigo: str) -> dict | None:
                     .order_by(Unidad.espacio_actual, Unidad.id)
                 )
             ],
-            "aguas_arriba": _recorrer(s, lote.id, "upstream"),
-            "aguas_abajo": _recorrer(s, lote.id, "downstream"),
-            "clientes": clientes_del_lote(codigo) or [],
+            "aguas_arriba": arriba,
+            "aguas_abajo": abajo,
+            "clientes": _clientes(s, [lote.id]),
+            "clientes_derivados": _clientes(s, ids_abajo),
         }
