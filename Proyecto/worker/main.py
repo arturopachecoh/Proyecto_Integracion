@@ -8,9 +8,9 @@ Cada TICK_SECONDS revisa la recepcion y la bodega principal (que no refrigeran)
 y mueve los productos que requieren frio a la camara de frio. Si la camara
 esta llena, los manda a la bodega externa (refrigerada, pero cobra por hora).
 
-NO revisa el area de acondicionamiento a proposito: ahi hay insumos frios que
-se dejaron para fabricar, y sacarlos arruinaria la fabricacion. Los productos
-frios que nacen en acondicionamiento los mueve el script de fabricacion.
+En el area de acondicionamiento solo mueve los productos frios que NACIERON
+ahi (fabricados). Los insumos frios que se dejaron para fabricar no se tocan:
+sacarlos arruinaria la fabricacion.
 """
 import logging
 import os
@@ -50,6 +50,25 @@ def tick(skus_frio: set[str]):
 
     libres = esp.libres("cold")
     movidos = 0
+
+    # Productos frios que nacieron en acondicionamiento -> a la camara
+    for u in custodia.nacidas_en_acondicionamiento(skus_frio):
+        if movidos >= MAX_MOVES_PER_TICK:
+            log.warning("Limite de movimientos por tick alcanzado; sigo en el proximo")
+            return
+        destino = "cold" if libres > 0 else "buffer"
+        try:
+            farma_client.move_product(u.id, esp.store_id(destino))
+        except httpx.HTTPStatusError as e:
+            log.error("No se pudo mover %s al frio: %s", u.id, e.response.text)
+            if e.response.status_code == 429:
+                return  # rate limit: esperar al proximo tick
+            continue
+        movidos += 1
+        if destino == "cold":
+            libres -= 1
+        custodia.registrar_traslado(u.id, destino)
+        log.info("Producto frio %s %s: packaging -> %s", u.sku, u.id, destino)
 
     for origen in ("checkIn", "bodega"):
         store_id = esp.store_id(origen)

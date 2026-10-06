@@ -232,3 +232,59 @@ def despachos_pendientes() -> list[tuple[int, str]]:
         filas = s.execute(select(VentaUnidad.venta_id, VentaUnidad.unidad_id)
                           .where(VentaUnidad.estado == "pendiente")).all()
         return [tuple(f) for f in filas]
+
+
+# ---------------------------------------------------------------------------
+# Consultas para fabricar y para la cadena de frio
+# ---------------------------------------------------------------------------
+
+ESPACIOS_USABLES = ("packaging", "checkIn", "bodega", "cold", "buffer")
+
+
+def unidades_disponibles(sku: str, margen: timedelta = timedelta(hours=1)) -> list[Unidad]:
+    """Unidades en stock de un SKU que se pueden usar para fabricar.
+    Primero las que ya estan en acondicionamiento (no hay que moverlas),
+    despues por vencimiento: las que vencen antes se usan primero (FEFO)."""
+    with SessionLocal() as s:
+        return list(s.scalars(
+            select(Unidad)
+            .where(Unidad.sku == sku, Unidad.estado == "en_stock",
+                   Unidad.espacio_actual.in_(ESPACIOS_USABLES),
+                   (Unidad.vence_en.is_(None)) | (Unidad.vence_en > _ahora() + margen))
+            .order_by((Unidad.espacio_actual != "packaging"), Unidad.vence_en.asc().nulls_last())
+        ))
+
+
+def nacidas_en_acondicionamiento(skus: set[str]) -> list[Unidad]:
+    """Unidades de esos SKU que estan en acondicionamiento porque NACIERON ahi
+    (su ultimo movimiento es una generacion). Las que llegaron por traslado
+    estan esperando ser fabricadas y no se tocan."""
+    if not skus:
+        return []
+    with SessionLocal() as s:
+        ultimo = (select(Movimiento.tipo)
+                  .where(Movimiento.unidad_id == Unidad.id)
+                  .order_by(Movimiento.id.desc()).limit(1)
+                  .correlate(Unidad).scalar_subquery())
+        return list(s.scalars(
+            select(Unidad).where(Unidad.sku.in_(skus), Unidad.estado == "en_stock",
+                                 Unidad.espacio_actual == "packaging", ultimo == "generacion")
+        ))
+
+
+def en_camino(sku: str, max_atraso: timedelta = timedelta(minutes=30)) -> int:
+    """Unidades de un SKU pedidas (compra o fabricacion) que aun no llegan.
+    Las solicitudes atrasadas mas de max_atraso se consideran perdidas."""
+    from sqlalchemy import func as f
+    with SessionLocal() as s:
+        return s.scalar(
+            select(f.coalesce(f.sum(Solicitud.cantidad), 0))
+            .where(Solicitud.sku == sku, Solicitud.estado == "pendiente",
+                   Solicitud.llega_en > _ahora() - max_atraso)
+        )
+
+
+def unidades_en(espacio: str) -> list[Unidad]:
+    with SessionLocal() as s:
+        return list(s.scalars(select(Unidad).where(Unidad.espacio_actual == espacio,
+                                                   Unidad.estado == "en_stock")))

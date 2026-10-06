@@ -44,9 +44,11 @@ def capacidad(tipo: str) -> int:
 
 
 def ocupacion(tipo: str) -> int:
-    """Unidades realmente ocupadas. Suma el inventario porque usedSpace
-    de la API no es confiable."""
-    return sum(i["quantity"] for i in farma_client.space_inventory(store_id(tipo)))
+    """Espacio ocupado. usedSpace incluye lo reservado para compras y
+    fabricaciones en camino; por si acaso se compara con el inventario real."""
+    usado = next(e["usedSpace"] for e in farma_client.spaces() if tipo_espacio(e) == tipo)
+    inventario = sum(i["quantity"] for i in farma_client.space_inventory(store_id(tipo)))
+    return max(usado, inventario)
 
 
 def libres(tipo: str) -> int:
