@@ -13,7 +13,10 @@ for s in farma_client.spaces():
     tipo = [k for k in ("checkIn", "checkOut", "packaging", "cold", "buffer", "quarantine") if s.get(k)]
     nombre = ", ".join(tipo) or "bodega principal"
     inventario = farma_client.space_inventory(s["_id"])
-    print(f"\n{nombre}  ({s['usedSpace']}/{s['totalSpace']})")
+    # usedSpace de la API no es confiable: se suma el inventario real (igual que app/espacios.py)
+    ocupado = sum(i["quantity"] for i in inventario)
+    aviso = f"  [usedSpace de la API dice {s['usedSpace']}]" if ocupado != s["usedSpace"] else ""
+    print(f"\n{nombre}  ({ocupado}/{s['totalSpace']}){aviso}")
     if not inventario:
         print("    (vacio)")
     for item in inventario:
