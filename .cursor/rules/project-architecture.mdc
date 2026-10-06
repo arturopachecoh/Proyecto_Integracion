@@ -1,0 +1,14 @@
+---
+description: Arquitectura E1: FastAPI + worker + SPA estática
+alwaysApply: true
+---
+
+# Project architecture
+
+Keep the existing Python backend, worker, and Postgres. Do not migrate to Next.js or extra microservices for E1.
+
+- Portal: Vite app in `Proyecto/web`, built to `web/dist`, served by FastAPI.
+- Farma HTTP only through `app/farma_client.py`. Checkout only through `app/integrations/checkout.py`.
+- After changing `web/src`, run `npm run build` in `Proyecto/web`.
+- One icon library: `react-icons`. Do not add another.
+- Compose already binds the web process to `0.0.0.0:8000` inside the container.
