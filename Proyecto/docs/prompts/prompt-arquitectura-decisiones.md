@@ -1,9 +1,9 @@
-# 02 — Arquitectura, decisiones técnicas y plan recomendado para la Entrega 1
+# Prompt 2 — Arquitectura, decisiones técnicas y plan recomendado para la Entrega 1
 
-> Este archivo **NO es el enunciado oficial** ni el informe entregado.  
-> Es una propuesta técnica inicial (Next.js, tablas en inglés). El diseño que corre y se entrega está en `docs/informe-e1/`.
+> Este archivo **NO es el enunciado oficial** ni el informe de Canvas.  
+> Es el **segundo prompt / paquete de instrucciones** para el agente: propuesta técnica inicial (Next.js, tablas en inglés). El sistema que corre es FastAPI + worker + Postgres + SPA Vite.
 >
-> Fuente de requisitos: `01_enunciado_proyecto_llm.md`.
+> Fuente de requisitos: `docs/01_enunciado_proyecto_llm.md`.
 >
 > Regla: si esta propuesta contradice un requisito oficial, **el archivo 01 gana**.
 
