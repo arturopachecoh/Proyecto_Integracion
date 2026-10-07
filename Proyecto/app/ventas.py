@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import text
 
@@ -13,6 +14,7 @@ from app.integrations import checkout
 
 log = logging.getLogger("ventas")
 LOCK_VENTA = 4_000_003
+RESERVA_MINUTOS = 60  # una sesion de Integrapay no dura tanto; despues se libera el stock
 
 
 @contextmanager
@@ -123,6 +125,17 @@ def _despachar(venta_id: int) -> None:
             custodia.confirmar_despacho(unidad_id)
         except Exception:
             log.exception("No se pudo confirmar despacho de %s", unidad_id)
+
+
+def expirar_reservas(minutos: int = RESERVA_MINUTOS) -> list[int]:
+    """Cancela las ventas que llevan mas de `minutos` sin pago y libera sus unidades.
+    Si el cliente abandona Integrapay, la reserva no puede bloquear stock para siempre."""
+    limite = datetime.now(timezone.utc) - timedelta(minutes=minutos)
+    expiradas = custodia.ventas_sin_pagar(limite)
+    for venta_id in expiradas:
+        finalizar(venta_id, "cancelado")
+        log.info("Venta %s sin pago tras %d min: cancelada y reserva liberada", venta_id, minutos)
+    return expiradas
 
 
 def recuperar_pendientes() -> None:
