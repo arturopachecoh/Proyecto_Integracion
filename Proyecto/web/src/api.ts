@@ -59,3 +59,61 @@ export async function crearCheckout(payload: {
   if (!r.ok) throw new Error(data.detail || "No se pudo iniciar el pago");
   return data as { redirect_url: string; venta_id: number };
 }
+
+export type LoteVenta = { codigo: string; sku: string };
+
+export type VentaResumen = {
+  id: number;
+  estado: string;
+  total: number;
+  transaccion_id: string | null;
+  comprador_nombre: string | null;
+  comprador_email: string | null;
+  creada_en: string | null;
+  pagada_en: string | null;
+  lotes: LoteVenta[];
+  items: { sku: string; cantidad: number; precio_unitario: number }[];
+};
+
+export async function confirmarCheckout(ventaId: number, resultado: string) {
+  const r = await fetch("/api/checkout/confirmar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ venta_id: ventaId, resultado }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "No se pudo confirmar el pago");
+  return data as {
+    venta_id: number;
+    estado: string;
+    lotes: LoteVenta[];
+    transaccion_id?: string | null;
+  };
+}
+
+export async function getVentas(): Promise<VentaResumen[]> {
+  const r = await fetch("/api/ventas");
+  if (!r.ok) throw new Error("No se pudieron cargar los pedidos");
+  const data = await r.json();
+  return (data.ventas || []) as VentaResumen[];
+}
+
+export type GrupoLotes = {
+  sku: string;
+  hay_mas?: boolean;
+  lotes: {
+    codigo: string;
+    unidades: number;
+    en_stock: number;
+    despachada: number;
+    vence_en: string | null;
+  }[];
+};
+
+export async function getLotes(q = ""): Promise<GrupoLotes[]> {
+  const url = q.trim() ? `/api/lotes?q=${encodeURIComponent(q.trim())}` : "/api/lotes";
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("No se pudieron cargar los códigos de lote");
+  const data = await r.json();
+  return (data.grupos || []) as GrupoLotes[];
+}

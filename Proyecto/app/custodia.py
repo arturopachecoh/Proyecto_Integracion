@@ -8,7 +8,7 @@ Espacios validos: checkIn, bodega, cold, buffer, packaging, checkOut, quarantine
 import logging
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import case, or_, select
 
 from app.db import SessionLocal
 from sqlalchemy import func as sqlfunc
@@ -288,14 +288,86 @@ def venta(venta_id: int) -> dict | None:
         v = s.get(Venta, venta_id)
         if v is None:
             return None
-        return {
-            "id": v.id,
-            "estado": v.estado,
-            "total": v.total,
-            "transaccion_id": v.transaccion_id,
-            "comprador_nombre": v.comprador_nombre,
-            "comprador_email": v.comprador_email,
-        }
+        return _serializar_venta(s, v)
+
+
+def _serializar_venta(s, v: Venta) -> dict:
+    filas = s.execute(
+        select(Lote.codigo, Lote.sku, Unidad.id, VentaUnidad.estado)
+        .join(Unidad, Unidad.lote_id == Lote.id)
+        .join(VentaUnidad, VentaUnidad.unidad_id == Unidad.id)
+        .where(VentaUnidad.venta_id == v.id)
+        .order_by(Lote.sku, Lote.codigo)
+    ).all()
+    lotes: list[dict] = []
+    vistos: set[str] = set()
+    unidades = []
+    for codigo, sku, unidad_id, estado_u in filas:
+        unidades.append({"id": unidad_id, "codigo": codigo, "sku": sku, "estado": estado_u})
+        if codigo not in vistos:
+            vistos.add(codigo)
+            lotes.append({"codigo": codigo, "sku": sku})
+    items = [
+        {"sku": it.sku, "cantidad": it.cantidad, "precio_unitario": it.precio_unitario}
+        for it in s.scalars(select(VentaItem).where(VentaItem.venta_id == v.id))
+    ]
+    return {
+        "id": v.id,
+        "estado": v.estado,
+        "total": v.total,
+        "transaccion_id": v.transaccion_id,
+        "comprador_nombre": v.comprador_nombre,
+        "comprador_email": v.comprador_email,
+        "creada_en": v.creada_en.isoformat() if v.creada_en else None,
+        "pagada_en": v.pagada_en.isoformat() if v.pagada_en else None,
+        "lotes": lotes,
+        "items": items,
+        "unidades": unidades,
+    }
+
+
+def listar_ventas(limite: int = 40) -> list[dict]:
+    with SessionLocal() as s:
+        filas = list(s.scalars(select(Venta).order_by(Venta.id.desc()).limit(limite)))
+        return [_serializar_venta(s, v) for v in filas]
+
+
+def listar_codigos_lote(q: str | None = None, limite_por_sku: int = 8) -> list[dict]:
+    """Códigos de kits para el visor: agrupados por SKU, los más recientes primero."""
+    filtro = (q or "").strip().upper()
+    with SessionLocal() as s:
+        stmt = (
+            select(
+                Lote.sku,
+                Lote.codigo,
+                Lote.vence_en,
+                sqlfunc.count().label("unidades"),
+                sqlfunc.sum(case((Unidad.estado == "en_stock", 1), else_=0)).label("en_stock"),
+                sqlfunc.sum(case((Unidad.estado == "despachada", 1), else_=0)).label("despachada"),
+            )
+            .join(Unidad, Unidad.lote_id == Lote.id)
+            .where(Lote.sku.like("KIT-%"))
+            .group_by(Lote.id)
+            .order_by(Lote.sku, Lote.id.desc())
+        )
+        if filtro:
+            like = f"%{filtro}%"
+            stmt = stmt.where(or_(Lote.codigo.ilike(like), Lote.sku.ilike(like)))
+        filas = s.execute(stmt).all()
+        grupos: dict[str, dict] = {}
+        for sku, codigo, vence_en, unidades, en_stock, despachada in filas:
+            g = grupos.setdefault(sku, {"sku": sku, "lotes": [], "hay_mas": False})
+            if len(g["lotes"]) >= limite_por_sku:
+                g["hay_mas"] = True
+                continue
+            g["lotes"].append({
+                "codigo": codigo,
+                "unidades": int(unidades or 0),
+                "en_stock": int(en_stock or 0),
+                "despachada": int(despachada or 0),
+                "vence_en": vence_en.isoformat() if vence_en else None,
+            })
+        return list(grupos.values())
 
 
 def venta_por_transaccion(tx_id: str) -> dict | None:

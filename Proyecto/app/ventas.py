@@ -66,7 +66,13 @@ def iniciar_checkout(nombre: str, email: str, items: list[dict]) -> dict:
             "error": f"{PUBLIC_BASE_URL}/pago/error?venta={venta_id}",
             "cancelled": f"{PUBLIC_BASE_URL}/pago/cancelado?venta={venta_id}",
         }
-        tx = checkout.crear_transaccion(validado["total"], venta_id, urls)
+        try:
+            tx = checkout.crear_transaccion(validado["total"], venta_id, urls)
+        except Exception:
+            log.exception("Integrapay no inició la venta %s; se libera la reserva", venta_id)
+            custodia.marcar_pago(venta_id, "error")
+            custodia.liberar_reserva(venta_id)
+            raise
         custodia.marcar_pago(venta_id, "pendiente_pago", transaccion_id=tx["id"])
         return {"venta_id": venta_id, "redirect_url": tx["redirect_url"], "transaccion_id": tx["id"]}
 
@@ -85,6 +91,20 @@ def normalizar_resultado(resultado: str) -> str | None:
     return RESULTADO_PAGO.get((resultado or "").strip().lower())
 
 
+def _respuesta_venta(venta_id: int, estado: str) -> dict:
+    detalle = custodia.venta(venta_id) or {}
+    return {
+        "venta_id": venta_id,
+        "estado": estado,
+        "lotes": detalle.get("lotes") or [],
+        "items": detalle.get("items") or [],
+        "transaccion_id": detalle.get("transaccion_id"),
+        "comprador_nombre": detalle.get("comprador_nombre"),
+        "comprador_email": detalle.get("comprador_email"),
+        "total": detalle.get("total"),
+    }
+
+
 def finalizar(venta_id: int, resultado: str) -> dict:
     """Idempotente. resultado: exito | cancelado | error (también aliases Integrapay)."""
     resultado = normalizar_resultado(resultado) or ""
@@ -94,19 +114,19 @@ def finalizar(venta_id: int, resultado: str) -> dict:
     if venta is None:
         raise ValueError("Venta no encontrada")
     if venta["estado"] == "pagada":
-        return {"venta_id": venta_id, "estado": "pagada"}
+        return _respuesta_venta(venta_id, "pagada")
     if venta["estado"] in {"cancelada", "error"}:
-        return {"venta_id": venta_id, "estado": venta["estado"]}
+        return _respuesta_venta(venta_id, venta["estado"])
 
     if resultado == "exito":
         custodia.marcar_pago(venta_id, "pagada")
         _despachar(venta_id)
-        return {"venta_id": venta_id, "estado": "pagada"}
+        return _respuesta_venta(venta_id, "pagada")
 
     estado = "cancelada" if resultado == "cancelado" else "error"
     custodia.marcar_pago(venta_id, estado)
     custodia.liberar_reserva(venta_id)
-    return {"venta_id": venta_id, "estado": estado}
+    return _respuesta_venta(venta_id, estado)
 
 
 def _despachar(venta_id: int) -> None:

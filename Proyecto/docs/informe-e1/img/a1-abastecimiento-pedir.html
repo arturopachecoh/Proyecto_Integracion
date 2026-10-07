@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js"></script>
+<style>
+  html, body { margin: 0; background: #fff; }
+  .wrap { display: inline-block; padding: 28px 36px; }
+  .mermaid { background: #fff; }
+</style>
+</head><body>
+<div class="wrap"><div class="mermaid">%%{init: {&quot;theme&quot;: &quot;neutral&quot;, &quot;themeVariables&quot;: {&quot;fontSize&quot;: &quot;18px&quot;}, &quot;sequence&quot;: {&quot;useMaxWidth&quot;: false, &quot;actorMargin&quot;: 90, &quot;messageMargin&quot;: 28, &quot;width&quot;: 220}}}%%
+sequenceDiagram
+    autonumber
+    actor Planta
+    participant Backend
+    participant Farma as Farma Central
+
+    Planta-&gt;&gt;Backend: producir 30 kits (tanda 10)
+    Backend-&gt;&gt;Backend: receta pide API-AMOXI-500
+    Backend-&gt;&gt;Farma: POST challenge 250 x API-AMOXI-500
+    Farma--&gt;&gt;Backend: difficulty 12 bits
+    Backend-&gt;&gt;Backend: PoW sha256(prefix:nonce)
+    Backend-&gt;&gt;Farma: POST /products qty 250
+    Farma--&gt;&gt;Backend: availableAt 22:20:04Z
+    Backend-&gt;&gt;Backend: solicitud 1 pendiente en Postgres
+</div></div>
+<script>
+  mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "loose" });
+  mermaid.run().then(() => document.documentElement.setAttribute("data-ready", "1"));
+</script>
+</body></html>

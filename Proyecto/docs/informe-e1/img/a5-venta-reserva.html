@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js"></script>
+<style>
+  html, body { margin: 0; background: #fff; }
+  .wrap { display: inline-block; padding: 28px 36px; }
+  .mermaid { background: #fff; }
+</style>
+</head><body>
+<div class="wrap"><div class="mermaid">%%{init: {&quot;theme&quot;: &quot;neutral&quot;, &quot;themeVariables&quot;: {&quot;fontSize&quot;: &quot;18px&quot;}, &quot;sequence&quot;: {&quot;useMaxWidth&quot;: false, &quot;actorMargin&quot;: 80, &quot;messageMargin&quot;: 26, &quot;width&quot;: 200}}}%%
+sequenceDiagram
+    autonumber
+    actor Cliente
+    participant Portal
+    participant Backend
+    participant Integrapay
+
+    Cliente-&gt;&gt;Portal: catalogo + carro 1 kit
+    Portal-&gt;&gt;Backend: POST /api/checkout
+    Backend-&gt;&gt;Backend: FEFO reserva lote 261006-60e8
+    Backend-&gt;&gt;Backend: venta 6 pendiente_pago
+    Backend-&gt;&gt;Integrapay: POST /payments/auth
+    Backend-&gt;&gt;Integrapay: POST /payments/init 534
+    Note over Integrapay: backUrl /pago/exito?venta=6
+    Integrapay--&gt;&gt;Portal: redirect_url
+    Cliente-&gt;&gt;Integrapay: paga en la pasarela
+</div></div>
+<script>
+  mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "loose" });
+  mermaid.run().then(() => document.documentElement.setAttribute("data-ready", "1"));
+</script>
+</body></html>

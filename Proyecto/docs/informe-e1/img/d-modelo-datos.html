@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js"></script>
+<style>
+  html, body { margin: 0; background: #fff; }
+  .wrap { display: inline-block; padding: 28px 36px; }
+  .mermaid { background: #fff; }
+</style>
+</head><body>
+<div class="wrap"><div class="mermaid">%%{init: {&quot;theme&quot;: &quot;neutral&quot;, &quot;themeVariables&quot;: {&quot;fontSize&quot;: &quot;18px&quot;}, &quot;er&quot;: {&quot;useMaxWidth&quot;: false}}}%%
+erDiagram
+    solicitudes ||--o| lotes : genera
+    solicitudes ||--|{ consumos : consume
+    lotes ||--|{ unidades : contiene
+    lotes ||--o{ lot_relations : padre
+    lotes ||--o{ lot_relations : hijo
+    unidades ||--o| consumos : se_consume
+    unidades ||--o{ movimientos : historial
+    unidades ||--o| venta_unidades : se_vende
+    ventas ||--|{ venta_items : lineas
+    ventas ||--|{ venta_unidades : unidades
+</div></div>
+<script>
+  mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "loose" });
+  mermaid.run().then(() => document.documentElement.setAttribute("data-ready", "1"));
+</script>
+</body></html>
