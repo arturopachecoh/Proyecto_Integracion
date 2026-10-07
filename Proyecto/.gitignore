@@ -13,3 +13,15 @@ venv/
 # Editores
 .vscode/
 .idea/
+
+# Índices locales de agentes (regenerables)
+graphify-out/
+.codebase-memory/
+
+# Frontend
+web/node_modules/
+web/dist/
+# Playwright e2e (local)
+/node_modules/
+test-results/
+playwright-report/

@@ -1,0 +1,15 @@
+.git
+.venv
+**/__pycache__
+**/*.pyc
+web/node_modules
+graphify-out
+.codebase-memory
+.env
+*.md
+docs
+package.json
+package-lock.json
+node_modules
+playwright.config.ts
+tests

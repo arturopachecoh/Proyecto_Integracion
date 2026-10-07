@@ -1,0 +1,5 @@
+.DS_Store
+.codebase-memory/
+
+# Config local de Cursor (secretos MCP); las rules sí van al repo
+.cursor/mcp.json

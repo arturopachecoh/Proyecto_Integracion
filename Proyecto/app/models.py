@@ -5,7 +5,9 @@ unidades        estado ACTUAL de cada unidad (donde esta, en que estado)
 movimientos     historial: todo lo que le paso a cada unidad
 solicitudes     compras de insumos y fabricaciones pedidas a Farma Central
 consumos        que unidades exactas se usaron en cada fabricacion
+lot_relations   genealogia lote↔lote (N:M, materializada al nacer el lote hijo)
 ventas          ventas a clientes (portal y, desde E2, otros canales)
+venta_items     lineas de la venta con precio vigente al momento de comprar
 venta_unidades  que unidades exactas se llevo cada venta
 """
 from datetime import datetime
@@ -82,7 +84,8 @@ class Unidad(Base):
     sku: Mapped[str] = mapped_column(String(40))
     espacio_actual: Mapped[str | None] = mapped_column(_enum(*ESPACIOS, name="espacio"))
     estado: Mapped[str] = mapped_column(
-        _enum("en_stock", "consumida", "despachada", "vencida", "cuarentena", name="estado_unidad"),
+        _enum("en_stock", "reservada", "consumida", "despachada", "vencida", "cuarentena",
+              name="estado_unidad"),
         default="en_stock",
     )
     vence_en: Mapped[datetime | None] = mapped_column(Fecha)
@@ -128,9 +131,35 @@ class Consumo(Base):
     __tablename__ = "consumos"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    solicitud_id: Mapped[int] = mapped_column(ForeignKey("solicitudes.id"), index=True)  # pregunta 4
+    solicitud_id: Mapped[int] = mapped_column(ForeignKey("solicitudes.id"), index=True)
     unidad_id: Mapped[str] = mapped_column(ForeignKey("unidades.id"), unique=True)  # se consume una vez
-    lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"), index=True)  # pregunta 2
+    lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"), index=True)
+
+
+class LotRelation(Base):
+    """Arista N:M: el lote padre se consumo para generar el lote hijo."""
+
+    __tablename__ = "lot_relations"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    parent_lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"), index=True)
+    child_lote_id: Mapped[int] = mapped_column(ForeignKey("lotes.id"), index=True)
+    cantidad: Mapped[int] = mapped_column(Integer)
+    solicitud_id: Mapped[int] = mapped_column(ForeignKey("solicitudes.id"), index=True)
+
+    __table_args__ = (
+        UniqueConstraint("parent_lote_id", "child_lote_id", name="uq_lot_relations_parent_child"),
+    )
+
+
+class VentaItem(Base):
+    __tablename__ = "venta_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    venta_id: Mapped[int] = mapped_column(ForeignKey("ventas.id"), index=True)
+    sku: Mapped[str] = mapped_column(String(40))
+    cantidad: Mapped[int] = mapped_column(Integer)
+    precio_unitario: Mapped[int] = mapped_column(Integer)
 
 
 class Movimiento(Base):
@@ -150,4 +179,7 @@ class Movimiento(Base):
     venta_id: Mapped[int | None] = mapped_column(ForeignKey("ventas.id"))
 
 
-__all__ = ["Base", "Lote", "Unidad", "Movimiento", "Solicitud", "Consumo", "Venta", "VentaUnidad"]
+__all__ = [
+    "Base", "Lote", "Unidad", "Movimiento", "Solicitud", "Consumo",
+    "LotRelation", "Venta", "VentaItem", "VentaUnidad",
+]

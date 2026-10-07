@@ -1,0 +1,13 @@
+---
+description: No llamar servicios de la universidad sin autorización explícita
+alwaysApply: true
+---
+
+# University integration safety
+
+Do not call Farma Central, Checkout, SSH, or the course server unless the user explicitly asks in this turn.
+
+- Keep `CHECKOUT_MODE=mock` and `DISPATCH_FARMA=0` unless told otherwise.
+- Do not run production buys, PoW against real challenges, or `docker compose` against the UC host.
+- Do not put secrets in git. Use `.env.example` as the template only.
+- Prepare Nginx/Alembic files locally; applying them on `distribuidorX.ing.uc.cl` is an ops step for the group.
