@@ -339,6 +339,13 @@ def confirmar_despacho(unidad_id: str) -> None:
         u.espacio_actual = None
 
 
+def ventas_sin_pagar(antes_de: datetime) -> list[int]:
+    """Ventas que siguen esperando pago desde antes de `antes_de` (cliente abandono)."""
+    with SessionLocal() as s:
+        return list(s.scalars(select(Venta.id).where(
+            Venta.estado == "pendiente_pago", Venta.creada_en < antes_de)))
+
+
 def despachos_pendientes() -> list[tuple[int, str]]:
     """Para recuperarse de una caida: (venta_id, unidad_id) que quedaron a medias.
     Para cada una hay que preguntarle a Farma Central si la unidad salio o no."""

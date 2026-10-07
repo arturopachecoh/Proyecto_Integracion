@@ -21,9 +21,9 @@ if TEST_DB:
 if TEST_DB:
     from sqlalchemy import select
 
-    from app import custodia
+    from app import custodia, ventas
     from app.db import SessionLocal
-    from app.models import Lote, Movimiento, Unidad
+    from app.models import Lote, Movimiento, Unidad, Venta
 
 
 def _ahora() -> datetime:
@@ -31,7 +31,7 @@ def _ahora() -> datetime:
 
 
 @unittest.skipUnless(TEST_DB, "TEST_DATABASE_URL no definido")
-class VencerExpiradasTest(unittest.TestCase):
+class _ConLote(unittest.TestCase):
     def setUp(self):
         self.sufijo = uuid.uuid4().hex[:8]
         with SessionLocal.begin() as s:
@@ -52,6 +52,8 @@ class VencerExpiradasTest(unittest.TestCase):
         with SessionLocal() as s:
             return s.get(Unidad, uid).estado
 
+
+class VencerExpiradasTest(_ConLote):
     def test_marca_solo_en_stock_vencidas(self):
         vencida = self._unidad("en_stock", _ahora() - timedelta(minutes=5))
         vigente = self._unidad("en_stock", _ahora() + timedelta(hours=5))
@@ -75,6 +77,40 @@ class VencerExpiradasTest(unittest.TestCase):
         with SessionLocal() as s:
             n = len(list(s.scalars(select(Movimiento).where(Movimiento.unidad_id == uid))))
         self.assertEqual(n, 1)
+
+
+@unittest.skipUnless(TEST_DB, "TEST_DATABASE_URL no definido")
+class ExpirarReservasTest(_ConLote):
+    def _venta_reservada(self, hace: timedelta) -> tuple[int, str]:
+        uid = self._unidad("en_stock", _ahora() + timedelta(days=1))
+        venta_id = custodia.crear_venta("Test", "t@test.cl", 100)
+        custodia.asignar_unidades_a_venta(venta_id, [uid])
+        with SessionLocal.begin() as s:
+            s.get(Venta, venta_id).creada_en = _ahora() - hace
+        return venta_id, uid
+
+    def _estado_venta(self, venta_id: int) -> str:
+        with SessionLocal() as s:
+            return s.get(Venta, venta_id).estado
+
+    def test_cancela_abandonadas_y_libera_stock(self):
+        vieja, uid_vieja = self._venta_reservada(timedelta(hours=2))
+        nueva, uid_nueva = self._venta_reservada(timedelta(minutes=5))
+
+        expiradas = ventas.expirar_reservas(60)
+
+        self.assertIn(vieja, expiradas)
+        self.assertNotIn(nueva, expiradas)
+        self.assertEqual(self._estado_venta(vieja), "cancelada")
+        self.assertEqual(self._estado(uid_vieja), "en_stock")
+        self.assertEqual(self._estado_venta(nueva), "pendiente_pago")
+        self.assertEqual(self._estado(uid_nueva), "reservada")
+
+    def test_no_toca_pagadas(self):
+        venta_id, uid = self._venta_reservada(timedelta(hours=2))
+        custodia.marcar_pago(venta_id, "pagada")
+        self.assertNotIn(venta_id, ventas.expirar_reservas(60))
+        self.assertEqual(self._estado_venta(venta_id), "pagada")
 
 
 if __name__ == "__main__":

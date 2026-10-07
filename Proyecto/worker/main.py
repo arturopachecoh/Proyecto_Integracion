@@ -117,6 +117,7 @@ def main():
             vencidas = custodia.vencer_expiradas()
             if vencidas:
                 log.info("Marcadas %d unidades vencidas", vencidas)
+            ventas.expirar_reservas()
             tick(skus_frio)
             ventas.recuperar_pendientes()
         except Exception:
