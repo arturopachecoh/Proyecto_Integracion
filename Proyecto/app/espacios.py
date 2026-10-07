@@ -48,6 +48,10 @@ def ocupacion(tipo: str) -> int:
     fabricaciones en camino; por si acaso se compara con el inventario real."""
     usado = next(e["usedSpace"] for e in farma_client.spaces() if tipo_espacio(e) == tipo)
     inventario = sum(i["quantity"] for i in farma_client.space_inventory(store_id(tipo)))
+    if tipo == "packaging":
+        # usedSpace puede venir atrasado: sumar los productos que estan por nacer ahi
+        from app import custodia
+        inventario += custodia.fabricaciones_en_camino()
     return max(usado, inventario)
 
 

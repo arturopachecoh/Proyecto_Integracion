@@ -26,7 +26,7 @@ from sqlalchemy import text
 from app import custodia
 from app import espacios as esp
 from app.db import engine
-from app.operaciones import (FaltanInsumos, catalogo, comprar, es_frio, fabricar, mover,
+from app.operaciones import (FaltanInsumos, SinEspacio, catalogo, comprar, es_frio, fabricar, mover,
                              receta, tamano_lote)
 
 log = logging.getLogger("produccion")
@@ -89,11 +89,20 @@ def planificar(kits: dict[str, int]) -> dict[str, int]:
 
 
 def _cuantos_caben(sku: str, maximo: int) -> int:
-    """Mayor multiplo del lote <= maximo cuyos componentes caben en acondicionamiento."""
+    """Mayor multiplo del lote <= maximo cuyos componentes caben en acondicionamiento.
+    Los componentes que ya estan ahi no necesitan espacio: solo cuenta lo que hay que mover.
+    Tambien se reserva el espacio del producto que va a nacer."""
     lote = tamano_lote(sku)
-    huella_lote = sum(receta(sku, lote).values())
-    lotes = min(maximo // lote, esp.libres("packaging") // huella_lote)
-    return max(0, lotes) * lote
+    libres = esp.libres("packaging")
+    ya_estan = {c: sum(1 for u in custodia.unidades_disponibles(c) if u.espacio_actual == "packaging")
+                for c in receta(sku, 1)}
+    cantidad = (maximo // lote) * lote
+    while cantidad > 0:
+        por_mover = sum(max(0, n - ya_estan[c]) for c, n in receta(sku, cantidad).items())
+        if por_mover + cantidad <= libres:
+            return cantidad
+        cantidad -= lote
+    return 0
 
 
 def _cuantos_alcanzan(sku: str, maximo: int) -> int:
@@ -145,6 +154,15 @@ def _liberar_buffer(maximo: int = 100) -> int:
     return movidas
 
 
+def _vaciar_acondicionamiento() -> None:
+    for u in custodia.unidades_en("packaging"):
+        destino = ("cold" if esp.libres("cold") > 0 else "buffer") if es_frio(u.sku) else "bodega"
+        try:
+            mover(u.id, destino)
+        except Exception:
+            log.exception("No se pudo sacar %s de acondicionamiento", u.id)
+
+
 def _intentar_fabricar(sku: str, maximo: int) -> int:
     """Fabrica lo mas que se pueda de sku (hasta maximo). Devuelve cuantos pidio."""
     cantidad = min(_cuantos_alcanzan(sku, maximo), _cuantos_caben(sku, maximo))
@@ -155,6 +173,9 @@ def _intentar_fabricar(sku: str, maximo: int) -> int:
         return cantidad
     except FaltanInsumos:
         return 0  # algo cambio entre el calculo y la fabricacion; reintenta la proxima vuelta
+    except SinEspacio as e:
+        log.warning("%s; lo que alcanzo a mover se usara en la proxima vuelta", e)
+        return 0
     except Exception:
         log.exception("Fallo fabricando %d x %s", cantidad, sku)
         return 0
@@ -170,6 +191,7 @@ def producir(objetivos: dict[str, int], tanda: int = 10, max_horas: float = 12) 
 
     kits = set(objetivos)
     pedidos = defaultdict(int)
+    sin_avance = 0
     limite = time.time() + max_horas * 3600
 
     with _candado():
@@ -184,9 +206,13 @@ def producir(objetivos: dict[str, int], tanda: int = 10, max_horas: float = 12) 
             _despejar(kits)
             _liberar_buffer()
 
+            fabricados = 0
+
             # 1. Kits: armar todo lo que alcance
             for kit, r in restantes.items():
-                pedidos[kit] += _intentar_fabricar(kit, r)
+                n = _intentar_fabricar(kit, r)
+                pedidos[kit] += n
+                fabricados += n
 
             # 2. Planificar la tanda actual con lo que queda
             en_tanda = {k: min(tanda, objetivos[k] - pedidos[k])
@@ -198,13 +224,23 @@ def producir(objetivos: dict[str, int], tanda: int = 10, max_horas: float = 12) 
             for sku in sorted(plan, key=_profundidad, reverse=True):
                 if sku in kits or not catalogo()[sku]["components"]:
                     continue
-                if _intentar_fabricar(sku, plan[sku]) == 0 and _cuantos_caben(sku, plan[sku]) == 0:
+                n = _intentar_fabricar(sku, plan[sku])
+                fabricados += n
+                if n == 0 and _cuantos_caben(sku, plan[sku]) == 0:
                     sin_espacio = True
 
             # Si acondicionamiento esta lleno de intermedios esperando, se sacan a bodega
             if sin_espacio and not any(_cuantos_alcanzan(k, 1) for k in restantes):
                 intermedios = {s for s in catalogo() if catalogo()[s]["components"] and s not in kits}
                 _despejar(intermedios)
+
+            # Rompe-atascos: si acondicionamiento esta lleno y nada avanza hace varias
+            # vueltas (y no hay nada en camino), se vacia completo y se reintenta
+            sin_avance = 0 if fabricados else sin_avance + 1
+            if sin_espacio and sin_avance >= 6 and custodia.fabricaciones_en_camino() == 0:
+                log.warning("Acondicionamiento atascado; lo vacio a la bodega")
+                _vaciar_acondicionamiento()
+                sin_avance = 0
 
             # 4. Insumos: comprar lo que falta y no viene en camino
             for sku, cantidad in plan.items():

@@ -4,6 +4,8 @@ Todo el codigo que hable con Farma Central pasa por aqui.
 - Pide el token una sola vez y lo reutiliza hasta que esta por vencer
   (el endpoint /auth permite solo 20 llamadas cada 5 minutos).
 - Si una llamada responde 401, renueva el token y reintenta una vez.
+- Si responde 429 (limite de 250/min), espera lo que indica Ratelimit-Reset
+  (maximo 60 s) y reintenta, hasta 6 intentos en total.
 """
 import base64
 import json
@@ -47,11 +49,22 @@ def get_token(force: bool = False) -> str:
 
 def request(method: str, path: str, *, auth: bool = True, **kwargs):
     url = f"{FARMA_BASE_URL}{path}"
-    for attempt in range(2):
-        headers = {"Authorization": AUTH_PREFIX + get_token(force=attempt > 0)} if auth else {}
+    renovado = forzar = False
+    for intento in range(6):
+        headers = {"Authorization": AUTH_PREFIX + get_token(force=forzar)} if auth else {}
+        forzar = False  # el token se fuerza solo justo despues del 401, no en cada reintento
         r = httpx.request(method, url, headers=headers, timeout=15, **kwargs)
-        if r.status_code == 401 and auth and attempt == 0:
-            continue  # token vencido o invalido: renovar y reintentar una vez
+        if r.status_code == 401 and auth and not renovado:
+            renovado = forzar = True  # token vencido o invalido: renovar y reintentar
+            continue
+        if r.status_code == 429:
+            # Limite de 250/min: esperar a que se libere la ventana y reintentar
+            try:
+                espera = float(r.headers.get("Ratelimit-Reset", "10"))
+            except ValueError:
+                espera = 10
+            time.sleep(min(espera, 60) + 1)  # tope: nunca dormir mas de un minuto
+            continue
         break
     r.raise_for_status()
     return r.json() if r.content else None

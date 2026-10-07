@@ -386,6 +386,16 @@ def unidades_en(espacio: str) -> list[Unidad]:
                                                    Unidad.estado == "en_stock")))
 
 
+def fabricaciones_en_camino() -> int:
+    """Unidades de productos fabricados que aun no nacen (ocuparan acondicionamiento)."""
+    with SessionLocal() as s:
+        return s.scalar(
+            select(sqlfunc.coalesce(sqlfunc.sum(Solicitud.cantidad), 0))
+            .where(Solicitud.tipo == "fabricacion", Solicitud.estado == "pendiente",
+                   Solicitud.llega_en > _ahora() - timedelta(minutes=30))
+        ) or 0
+
+
 def stock_disponible(sku: str, margen: timedelta = timedelta(hours=1)) -> int:
     """Unidades vendibles de un SKU (en stock, no vencidas, en espacios usables)."""
     with SessionLocal() as s:
@@ -399,3 +409,4 @@ def stock_disponible(sku: str, margen: timedelta = timedelta(hours=1)) -> int:
                 (Unidad.vence_en.is_(None)) | (Unidad.vence_en > _ahora() + margen),
             )
         ) or 0
+
