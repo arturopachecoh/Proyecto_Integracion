@@ -113,6 +113,10 @@ def main():
                 skus_frio = {p["sku"] for p in catalogo if p["storage"]["cold"]}
                 cargado = time.time()
                 log.info("SKUs que requieren frio: %s", sorted(skus_frio))
+            # Antes del tick: solo usa Postgres, asi corre aunque Farma este caida
+            vencidas = custodia.vencer_expiradas()
+            if vencidas:
+                log.info("Marcadas %d unidades vencidas", vencidas)
             tick(skus_frio)
             ventas.recuperar_pendientes()
         except Exception:
