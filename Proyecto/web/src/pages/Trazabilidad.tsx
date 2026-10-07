@@ -24,6 +24,8 @@ type Entrega = {
   comprador_email: string;
   estado: string;
   transaccion_id: string | null;
+  pagada_en: string | null;
+  creada_en: string | null;
   unidades: number;
   sku: string;
 };
@@ -48,6 +50,7 @@ type Data = {
   clientes: any[];
   clientes_derivados: any[];
   entregas: Entrega[];
+  consulta_ms?: number;
 };
 
 function fmtFecha(iso: string | null) {
@@ -88,16 +91,22 @@ export default function Trazabilidad() {
   const [data, setData] = useState<Data | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [consultaMs, setConsultaMs] = useState<number | null>(null);
 
   async function buscar(codigo: string) {
     setError("");
     setData(null);
     if (!codigo.trim()) return;
     setLoading(true);
+    const t0 = performance.now();
     try {
       const r = await getTrazabilidad(codigo.trim());
+      const wall = Math.round(performance.now() - t0);
       if (!r) setError("Lote no encontrado en custodia local.");
-      else setData(r);
+      else {
+        setData(r);
+        setConsultaMs(typeof r.consulta_ms === "number" ? r.consulta_ms : wall);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -119,8 +128,16 @@ export default function Trazabilidad() {
     () => (data?.aguas_arriba || []).filter((n) => n.profundidad === 1),
     [data],
   );
+  const ancestros = useMemo(
+    () => (data?.aguas_arriba || []).filter((n) => n.profundidad > 1),
+    [data],
+  );
   const hijos = useMemo(
     () => (data?.aguas_abajo || []).filter((n) => n.profundidad === 1),
+    [data],
+  );
+  const descendientes = useMemo(
+    () => (data?.aguas_abajo || []).filter((n) => n.profundidad > 1),
     [data],
   );
 
@@ -158,6 +175,7 @@ export default function Trazabilidad() {
             <Kpi etiqueta="Vencimiento efectivo" valor={fmtFecha(data.vence_en_efectivo)} />
             <Kpi etiqueta="Conservación" valor={data.conservacion === "frio" ? "Refrigerado" : "Ambiente"} />
             <Kpi etiqueta="Estado actual" valor={resumenEstado(data.estado_unidades)} />
+            <Kpi etiqueta="Tiempo de consulta" valor={consultaMs != null ? `${consultaMs} ms` : "—"} />
           </section>
 
           <section className="trace-graph" aria-label="Grafo de custodia">
@@ -168,6 +186,12 @@ export default function Trazabilidad() {
               ) : padres.map((n) => (
                 <LoteCard key={n.codigo} n={n} />
               ))}
+              {ancestros.length > 0 && (
+                <>
+                  <p className="trace-col-title">Más arriba (recursivo)</p>
+                  {ancestros.map((n) => <LoteCard key={n.codigo} n={n} />)}
+                </>
+              )}
             </div>
             <div className="trace-edges" aria-hidden>⟨</div>
             <div>
@@ -190,12 +214,19 @@ export default function Trazabilidad() {
                 Lotes generados y entregas ({hijos.length} lote{hijos.length === 1 ? "" : "s"} · {data.entregas.length} entrega{data.entregas.length === 1 ? "" : "s"})
               </h2>
               {hijos.map((n) => <LoteCard key={n.codigo} n={n} />)}
+              {descendientes.length > 0 && (
+                <>
+                  <p className="trace-col-title">Más abajo (recursivo)</p>
+                  {descendientes.map((n) => <LoteCard key={n.codigo} n={n} />)}
+                </>
+              )}
               {data.entregas.map((e) => (
                 <article className="lot-card node-entrega" key={e.venta_id}>
                   <strong>Despacho / venta</strong>
                   <div className="code">{e.comprador_nombre || "Cliente portal"}</div>
                   <div className="muted">{e.comprador_email}</div>
                   <div className="muted">{e.unidades} u · pedido #{e.venta_id} · {e.estado}</div>
+                  <div className="muted">Pagado: {fmtFecha(e.pagada_en || e.creada_en)}</div>
                   {e.transaccion_id && <div className="muted">tx {e.transaccion_id}</div>}
                 </article>
               ))}
@@ -264,6 +295,7 @@ function Clientes({ filas }: { filas: any[] }) {
         <li key={c.venta_id}>
           Pedido #{c.venta_id} · {c.comprador_nombre} · {c.comprador_email} · {c.estado}
           {" · "}{c.unidades.length} unidades
+          {c.pagada_en ? ` · ${fmtFecha(c.pagada_en)}` : ""}
         </li>
       ))}
     </ul>

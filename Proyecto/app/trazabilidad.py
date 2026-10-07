@@ -5,6 +5,8 @@
 3. Clientes a los que se entregaron unidades del lote X.
 4. Lotes de insumo que originaron X (aguas arriba).
 """
+import time
+
 from sqlalchemy import literal, select
 
 from app.db import SessionLocal
@@ -199,7 +201,8 @@ def _clientes(s, lote_ids: list[int]) -> list[dict]:
             "sku": f.sku,
             "estado_despacho": f.estado_despacho,
         })
-    return list(por_venta.values())
+    # Pregunta 3: "se entregaron" = venta pagada (no reservas ni errores).
+    return [v for v in por_venta.values() if v["estado"] == "pagada"]
 
 
 def clientes_del_lote(codigo: str) -> list[dict] | None:
@@ -217,6 +220,7 @@ def consultar(codigo: str) -> dict | None:
 
     from app.models import Movimiento
 
+    t0 = time.perf_counter()
     with SessionLocal() as s:
         lote = _lote_por_codigo(s, codigo)
         if lote is None:
@@ -254,9 +258,9 @@ def consultar(codigo: str) -> dict | None:
         conservacion = "frio" if paso_frio or ocupacion.get("cold") or ocupacion.get("buffer") else "ambiente"
         arriba = _recorrer(s, lote.id, "upstream")
         abajo = _recorrer(s, lote.id, "downstream")
-        ids_abajo = [lote.id] + [n["id"] for n in abajo]
+        ids_derivados = [n["id"] for n in abajo]
         clientes = _clientes(s, [lote.id])
-        return {
+        data = {
             "lote": _serializar_lote(lote),
             "conservacion": conservacion,
             "espacios": {k: v for k, v in ocupacion.items()},
@@ -287,7 +291,7 @@ def consultar(codigo: str) -> dict | None:
             "aguas_arriba": arriba,
             "aguas_abajo": abajo,
             "clientes": clientes,
-            "clientes_derivados": _clientes(s, ids_abajo),
+            "clientes_derivados": _clientes(s, ids_derivados),
             "entregas": [
                 {
                     "venta_id": c["venta_id"],
@@ -295,9 +299,13 @@ def consultar(codigo: str) -> dict | None:
                     "comprador_email": c["comprador_email"],
                     "estado": c["estado"],
                     "transaccion_id": c["transaccion_id"],
+                    "pagada_en": c["pagada_en"],
+                    "creada_en": c["creada_en"],
                     "unidades": len(c["unidades"]),
                     "sku": (c["unidades"][0]["sku"] if c["unidades"] else lote.sku),
                 }
                 for c in clientes
             ],
         }
+        data["consulta_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+        return data
