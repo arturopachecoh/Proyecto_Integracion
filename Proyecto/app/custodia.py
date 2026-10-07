@@ -214,6 +214,24 @@ def registrar_vencidas(unidad_ids: list[str]) -> None:
             u.espacio_actual = None
 
 
+def vencer_expiradas(ahora: datetime | None = None) -> int:
+    """Marca vencidas las unidades en stock cuyo vence_en ya paso. Devuelve cuantas.
+
+    No toca las reservadas: tienen una venta en curso que se resuelve por su lado
+    (el portal igual no reserva lo que vence en menos de 1 hora)."""
+    ahora = ahora or _ahora()
+    with SessionLocal.begin() as s:
+        unidades = list(s.scalars(
+            select(Unidad).where(Unidad.estado == "en_stock", Unidad.vence_en < ahora)
+        ))
+        for u in unidades:
+            s.add(Movimiento(unidad_id=u.id, lote_id=u.lote_id, tipo="vencimiento",
+                             desde=u.espacio_actual, hacia=None))
+            u.estado = "vencida"
+            u.espacio_actual = None
+        return len(unidades)
+
+
 # ---------------------------------------------------------------------------
 # Ventas y despacho (con estado pendiente para no quedar a medias)
 # ---------------------------------------------------------------------------
