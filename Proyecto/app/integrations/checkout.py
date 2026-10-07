@@ -55,12 +55,18 @@ def _auth_token(force: bool = False) -> str:
         raise RuntimeError("Faltan CHECKOUT_SECRET / CHECKOUT_GROUP (o FARMA_*)")
     with _lock:
         if force or _token is None or time.time() > _token_exp - 60:
-            r = httpx.post(
-                f"{CHECKOUT_BASE_URL}/payments/auth",
-                json={"group": CHECKOUT_GROUP, "secret": CHECKOUT_SECRET},
-                timeout=15,
-            )
-            r.raise_for_status()
+            url = f"{CHECKOUT_BASE_URL}/payments/auth"
+            try:
+                r = httpx.post(
+                    url,
+                    json={"group": CHECKOUT_GROUP, "secret": CHECKOUT_SECRET},
+                    timeout=15,
+                )
+            except httpx.HTTPError as e:
+                raise RuntimeError(f"Integrapay auth no alcanzable ({url}): {e}") from e
+            if r.status_code >= 400:
+                log.error("Integrapay auth HTTP %s", r.status_code)
+                raise RuntimeError(f"Integrapay auth HTTP {r.status_code}")
             data = r.json()
             _token = data["token"]
             try:
@@ -92,16 +98,21 @@ def crear_transaccion(monto: int, venta_id: int, urls: dict[str, str]) -> dict:
     }
     token = _auth_token()
     for attempt in range(2):
-        r = httpx.post(
-            f"{CHECKOUT_BASE_URL}/payments/init",
-            headers={"Authorization": f"Bearer {token}"},
-            json=payload,
-            timeout=15,
-        )
+        try:
+            r = httpx.post(
+                f"{CHECKOUT_BASE_URL}/payments/init",
+                headers={"Authorization": f"Bearer {token}"},
+                json=payload,
+                timeout=15,
+            )
+        except httpx.HTTPError as e:
+            raise RuntimeError(f"Integrapay init no alcanzable: {e}") from e
         if r.status_code == 401 and attempt == 0:
             token = _auth_token(force=True)
             continue
-        r.raise_for_status()
+        if r.status_code >= 400:
+            log.error("Integrapay init HTTP %s", r.status_code)
+            raise RuntimeError(f"Integrapay init HTTP {r.status_code}")
         data = r.json()
         payment_id = str(data.get("payment_id") or data.get("id") or tx_id)
         redirect = data.get("redirect_url") or data.get("redirectUrl")

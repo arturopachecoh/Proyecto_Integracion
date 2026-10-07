@@ -2,7 +2,7 @@
 
 Requisito oficial del enunciado (`01`) frente al repo en `develop`.
 
-- **Diseño / diagramas / 3 decisiones:** docs internos listos; el PDF de Canvas lo arma el grupo. Falta dibujar los tres diagramas instanciados (API-AMOXI-500, BLI-AMOXI-500 → KIT-RESP-ADULTO, venta). Prioridad P0 informe.
+- **Diseño / diagramas / 3 decisiones:** fuente formal en `docs/informe-e1/` (secuencias instanciadas, anexos, decisiones, estrategia, custodia, IA). El PDF de Canvas se arma desde `informe-e1/INFORME.md`.
 - **Farma Central / PoW / acondicionamiento:** implementado. Riesgo: credenciales y rate limit. No llamar desde el agente.
 - **30 kits en PROD:** código `producir` listo. Es operación en el servidor, no de este repo. P0 ops.
 - **Custodia recepción/movimiento/consumo/generación:** funciona. Genealogía N:M materializada en `lot_relations`. P0 hecho.
@@ -13,5 +13,5 @@ Requisito oficial del enunciado (`01`) frente al repo en `develop`.
 - **Vencimiento automático:** helpers existen, el worker no marca vencidas aún. P2.
 - **Sensibilidad ±50% precio / umbrales:** política documentada en `implementation-plan.md`, no hay job automático. P1 informe / P2 código.
 - **Nginx / HTTPS / servidor UC:** ejemplo de Nginx; no se despliega desde aquí. P1 ops.
-- **Tests automatizados:** no hay. P2.
+- **Tests automatizados:** `tests/test_checkout_pow.py` y Playwright `clickthrough.spec.ts`. P2 ampliar cobertura de custodia.
 - **E2 canales / recall:** `Venta.canal` y `origen_grupo` anticipan. P3.

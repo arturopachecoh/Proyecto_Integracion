@@ -1,35 +1,60 @@
-# Distribuidora 4 - IIC3103
+# Distribuidora 4 — IIC3103 Entrega 1
 
-Portal: `/` · Trazabilidad: `/trazabilidad` · Health: `/health`
+Grupo 4. Portal de venta, visor de trazabilidad y custodia local (FastAPI + worker + Postgres + SPA Vite).
 
-## Correr en local (ambiente dev)
+- Portal: `https://choripan4.ing.uc.cl/`
+- Visor: `https://choripan4.ing.uc.cl/trazabilidad`
+- Pedidos: `https://choripan4.ing.uc.cl/pedidos`
+- Health: `/health`
 
-    cp .env.example .env        # completar secretos; CHECKOUT_MODE=mock por defecto
-    docker compose up --build
-    docker compose run --rm web alembic upgrade head
-    docker compose run --rm worker python -m app.scripts.sembrar_demo   # grafo + stock demo (opcional)
-    python -m unittest tests/test_checkout_pow.py
-    npx --yes playwright@1.55.1 install chromium
-    npx --yes playwright@1.55.1 test --config playwright.config.ts
-    # abrir http://localhost:3000  y  /trazabilidad?lote=L-DEMO-BLIAMOXI-7F3A
+El hostname del enunciado (`distribuidor4.ing.uc.cl`) no resuelve; el HTTPS público es **choripan4**.
+
+**Diseño entregado (Canvas):** [`docs/informe-e1/Informe_Entrega1_Distribuidora4.pdf`](docs/informe-e1/Informe_Entrega1_Distribuidora4.pdf). Fuente: [`docs/informe-e1/`](docs/informe-e1/). Diagramas a tamaño real: [`docs/informe-e1/diagramas.md`](docs/informe-e1/diagramas.md).
+
+Otros docs: `docs/01_enunciado_proyecto_llm.md` (requisitos), `docs/02_arquitectura_decisiones_entrega1.md` (propuesta inicial, **no** es lo implementado).
+
+## Correr en local
+
+```bash
+cp .env.example .env        # solo nombres; completar secretos en .env
+# CHECKOUT_MODE=mock por defecto; DISPATCH_FARMA=0
+docker compose up --build
+docker compose run --rm web alembic upgrade head
+# opcional, NUNCA en PROD:
+# docker compose run --rm worker python -m app.scripts.sembrar_demo
+python -m unittest tests/test_checkout_pow.py
+npx --yes playwright@1.55.1 install chromium
+npx --yes playwright@1.55.1 test --config playwright.config.ts
+# http://127.0.0.1:3000  y  /trazabilidad?lote=...
+```
 
 El frontend se construye en la imagen (Vite → `web/dist`). En el servidor no corre Node.
 
-## Deploy en el servidor (ambiente prod)
+## Deploy (PROD)
 
-    cd ~/distribuidora4
-    git pull
-    docker compose up -d --build
-    docker compose ps
-    curl http://127.0.0.1:3000/health
+```bash
+cd ~/Proyecto_Integracion/Proyecto
+git pull
+docker compose stop worker
+docker compose build web
+docker compose up -d web
+docker compose up -d worker
+docker compose ps
+curl -sS http://127.0.0.1:3000/health
+```
 
-Ver logs:
+**NUNCA** `docker compose down -v`: borra `pgdata` y el registro de custodia.
 
-    docker compose logs -f web
-    docker compose logs -f worker
+Logs: `docker compose logs -f web` / `worker`.
 
-NUNCA usar `docker compose down -v`: borra la base de datos (y el registro de custodia).
+PoW: `docker compose run --rm worker python -m app.pow`
 
-## Probar el solver de PoW
+## Declaración de uso de IA
 
-    docker compose run --rm worker python -m app.pow
+El enunciado (§18) exige declararlo en el informe. Resumen para el README:
+
+- **Herramientas:** Cursor (agente, modelo Grok) para código e informe; Graphify y Codebase Memory para mapa de módulos y símbolos; Playwright para verificar el portal y el visor; OpenAPI de Farma/Integrapay para los contratos HTTP.
+- **Tareas:** completar custodia N:M, portal, adapter de pagos, visor, deploy en la VM, y redactar `docs/informe-e1/` con diagramas instanciados (no genéricos).
+- **Verificación:** tests `tests/test_checkout_pow.py`, click-through Playwright, contrastar Graphify/`trace_path` con `app/operaciones.py` y `app/ventas.py`, números de `logs.txt` y ventas PROD. Cada integrante tiene que poder explicar reserva FEFO, visor solo-Postgres y por qué el PoW no corre dentro de Uvicorn.
+
+Detalle: [`docs/informe-e1/06-declaracion-ia.md`](docs/informe-e1/06-declaracion-ia.md).

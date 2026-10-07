@@ -1,5 +1,7 @@
 # Plan de implementación y decisiones E1
 
+El informe de diseño entregable está en `docs/informe-e1/`. Este archivo es la nota operativa de implementación.
+
 Rama de integración: `develop`. Épicas ya mergeadas:
 `epic/modelo-trazabilidad`, `epic/portal-venta`, `epic/pagos-despacho`,
 `epic/visor-trazabilidad`, `epic/informe-infra`.

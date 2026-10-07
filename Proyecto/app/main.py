@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import catalogo, trazabilidad, ventas
+from app import catalogo, custodia, trazabilidad, ventas
 from app.config import FARMA_ENV, PUBLIC_BASE_URL
 from app.db import db_ok
 from app.integrations.checkout import resultado_mock
@@ -75,7 +75,11 @@ def api_checkout(body: CheckoutIn):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except RuntimeError as e:
+        if "Integrapay" in str(e):
+            raise HTTPException(status_code=502, detail=str(e)) from e
         raise HTTPException(status_code=409, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"No se pudo iniciar el pago: {e}") from e
 
 
 @app.get("/api/checkout/mock/{venta_id}")
@@ -96,6 +100,24 @@ def api_checkout_confirmar(body: ConfirmarIn):
         return ventas.finalizar(body.venta_id, body.resultado)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@app.get("/api/ventas")
+def api_ventas():
+    return {"ventas": custodia.listar_ventas()}
+
+
+@app.get("/api/ventas/{venta_id}")
+def api_venta(venta_id: int):
+    data = custodia.venta(venta_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Venta no encontrada")
+    return data
+
+
+@app.get("/api/lotes")
+def api_lotes(q: str | None = Query(default=None)):
+    return {"grupos": custodia.listar_codigos_lote(q=q)}
 
 
 @app.get("/api/trazabilidad/{codigo}")

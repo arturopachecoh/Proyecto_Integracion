@@ -1,7 +1,7 @@
 # 02 — Arquitectura, decisiones técnicas y plan recomendado para la Entrega 1
 
-> Este archivo **NO es el enunciado oficial**.  
-> Es una propuesta técnica para implementar la Entrega 1 con buena base para E2/E3.
+> Este archivo **NO es el enunciado oficial** ni el informe entregado.  
+> Es una propuesta técnica inicial (Next.js, tablas en inglés). El diseño que corre y se entrega está en `docs/informe-e1/`.
 >
 > Fuente de requisitos: `01_enunciado_proyecto_llm.md`.
 >

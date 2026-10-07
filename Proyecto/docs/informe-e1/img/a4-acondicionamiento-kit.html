@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="es"><head>
+<meta charset="utf-8">
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11.6.0/dist/mermaid.min.js"></script>
+<style>
+  html, body { margin: 0; background: #fff; }
+  .wrap { display: inline-block; padding: 28px 36px; }
+  .mermaid { background: #fff; }
+</style>
+</head><body>
+<div class="wrap"><div class="mermaid">%%{init: {&quot;theme&quot;: &quot;neutral&quot;, &quot;themeVariables&quot;: {&quot;fontSize&quot;: &quot;18px&quot;}, &quot;sequence&quot;: {&quot;useMaxWidth&quot;: false, &quot;actorMargin&quot;: 80, &quot;messageMargin&quot;: 26, &quot;width&quot;: 200}}}%%
+sequenceDiagram
+    autonumber
+    participant Planta
+    participant Backend
+    participant Farma as Farma Central
+    participant DB as Postgres
+
+    Planta-&gt;&gt;Backend: fabricar KIT-RESP-ADULTO x 6
+    Backend-&gt;&gt;DB: FEFO 6 BLI-AMOXI + 6 BLI-IBUPRO + 6 FRA-SALBUTA
+    Backend-&gt;&gt;Farma: PATCH a packaging
+    Backend-&gt;&gt;Farma: challenge + PoW 13 bits
+    Backend-&gt;&gt;Farma: POST /products x 6
+    Backend-&gt;&gt;DB: solicitud 56, 18 consumos
+    Backend-&gt;&gt;DB: lot_relations N:M al nacer el kit
+    Planta-&gt;&gt;Farma: despejar kit packaging a bodega
+    Note over DB: stock_disponible listo para el portal
+</div></div>
+<script>
+  mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "loose" });
+  mermaid.run().then(() => document.documentElement.setAttribute("data-ready", "1"));
+</script>
+</body></html>
