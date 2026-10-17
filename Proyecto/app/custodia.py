@@ -113,6 +113,10 @@ def registrar_llegadas(productos: list[dict], espacio: str) -> int:
                 if lote is None:
                     continue
 
+            if lote.solicitud_id is None:
+                # Sin solicitud no hay cantidad pedida: se cuenta lo que va llegando
+                lote.cantidad_inicial += len(unidades)
+
             tipo_mov = "generacion" if lote.origen == "produccion" else "recepcion"
             for p in unidades:
                 s.add(Unidad(id=p["_id"], lote_id=lote.id, sku=sku, espacio_actual=espacio,
@@ -140,8 +144,22 @@ def _crear_lote(s, codigo: str, sku: str, unidades: list[dict]) -> Lote | None:
         .with_for_update(skip_locked=True)
     )
     if sol is None:
-        log.error("Lote %s (%s) llego sin una solicitud pendiente que lo explique", codigo, sku)
-        return None
+        # Hay una solicitud de este SKU que aun no llega (p. ej. una fabricacion que
+        # Farma muestra antes de tiempo): esperar al proximo tick para no perder
+        # su genealogia registrandola como recepcion
+        espera = s.scalar(select(Solicitud.id).where(
+            Solicitud.sku == sku, Solicitud.estado == "pendiente").limit(1))
+        if espera is not None:
+            return None
+        # Nadie la pidio (stock insertado en nuestras bodegas, p. ej. por el curso):
+        # se recibe igual para que quede en custodia y se pueda vender
+        log.warning("Lote %s (%s) llego sin solicitud: se registra como recepcion de Farma",
+                    codigo, sku)
+        lote = Lote(codigo=codigo, sku=sku, cantidad_inicial=0,
+                    vence_en=_fecha(unidades[0].get("expiresAt")), origen="farma_central")
+        s.add(lote)
+        s.flush()
+        return lote
 
     lote = Lote(codigo=codigo, sku=sku, cantidad_inicial=sol.cantidad,
                 vence_en=_fecha(unidades[0].get("expiresAt")),
