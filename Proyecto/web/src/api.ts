@@ -59,3 +59,46 @@ export async function crearCheckout(payload: {
   if (!r.ok) throw new Error(data.detail || "No se pudo iniciar el pago");
   return data as { redirect_url: string; venta_id: number };
 }
+
+export type RetiroResumen = {
+  id: string;
+  lote: string;
+  sku: string | null;
+  motivo: string | null;
+  emitido_en: string | null;
+  plazo: string | null;
+  estado: "pendiente" | "reportado" | "completo";
+  recibido_en: string | null;
+  reportado_en: string | null;
+  completado_en: string | null;
+  unidades_retiradas: number;
+};
+
+export type RetiroDetalle = RetiroResumen & {
+  unidades: {
+    id: string;
+    sku: string;
+    lote: string;
+    espacio_original: string | null;
+    en_cuarentena: boolean;
+    estado: string;
+    espacio_actual: string | null;
+  }[];
+  derivados: { batch: string; sku: string; sourceBatch: string }[];
+  entregas: { orderId: string; customerName: string; productIds: string[] }[];
+  notificaciones: { oc_id: string; cliente: string | null; unidades: number; enviada_en: string | null }[];
+  ultimo_error: string | null;
+};
+
+export async function getRetiros(): Promise<RetiroResumen[]> {
+  const r = await fetch("/api/recalls");
+  if (!r.ok) throw new Error("No se pudieron cargar los retiros");
+  return r.json();
+}
+
+export async function getRetiro(id: string): Promise<RetiroDetalle | null> {
+  const r = await fetch(`/api/recalls/${encodeURIComponent(id)}`);
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error("No se pudo cargar el retiro");
+  return r.json();
+}

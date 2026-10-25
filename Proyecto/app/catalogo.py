@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import logging
 
-from app import custodia, farma_client
+from app import farma_client, stock
 from app.config import FARMA_BASE_URL
 from app.operaciones import catalogo as farma_catalogo
 
@@ -101,7 +101,7 @@ def listar_kits() -> list[dict]:
                 "nombre": k["nombre"],
                 "imagen": k["imagen"],
                 "precio": precios.get(sku),
-                "stock": custodia.stock_disponible(sku),
+                "stock": stock.vendible_portal(sku),
                 "frio": k["frio"],
             })
         return kits
@@ -116,7 +116,7 @@ def listar_kits() -> list[dict]:
             "nombre": _nombre(prod, sku),
             "imagen": _imagen(prod),
             "precio": precios.get(sku),
-            "stock": custodia.stock_disponible(sku),
+            "stock": stock.vendible_portal(sku),
             "frio": bool((prod.get("storage") or {}).get("cold")),
         })
     kits.sort(key=lambda x: x["sku"])
