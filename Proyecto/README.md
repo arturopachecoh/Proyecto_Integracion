@@ -33,3 +33,22 @@ NUNCA usar `docker compose down -v`: borra la base de datos (y el registro de cu
 ## Probar el solver de PoW
 
     docker compose run --rm worker python -m app.pow
+
+## Pedidos (Entrega 2)
+
+Dos contenedores nuevos: `pedidos` (sFTP, Pub/Sub, decisión y despacho de OC)
+y `reponedor` (mantiene el mínimo de cada kit). Diseño en `docs/04`.
+
+Configuración inicial, una vez por ambiente:
+
+    mkdir -p keys && chmod 700 keys
+    ssh-keyscan -p 22 choripan10.ing.uc.cl > keys/known_hosts
+    docker compose run --rm --no-deps -v "$PWD/keys:/keys-rw" pedidos \
+        python -m app.scripts.crear_suscripcion /keys-rw/pubsub-dev.json
+    docker compose run --rm web alembic upgrade head
+    docker compose up -d --build
+
+Estado en vivo:
+
+    curl http://127.0.0.1:3000/api/salud/pedidos
+    docker compose logs -f pedidos reponedor

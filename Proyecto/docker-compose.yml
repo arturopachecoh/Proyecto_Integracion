@@ -43,5 +43,38 @@ services:
     cpus: "1.0"                           # el PoW nunca puede usar mas de 1 de los 2 nucleos
     mem_limit: 256m
 
+  pedidos:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "worker.pedidos"]
+    env_file: .env
+    volumes:
+      - ./keys:/code/keys:ro              # llave de Pub/Sub y known_hosts del sFTP
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 192m
+
+  mensajeria:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "worker.mensajeria"]   # proceso propio: el modelo puede tardar ~40 s
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 128m
+
+  reponedor:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "worker.reponedor"]
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    cpus: "1.0"                           # el PoW nunca puede usar mas de 1 de los 2 nucleos
+    mem_limit: 256m
+
 volumes:
   pgdata:

@@ -239,12 +239,14 @@ def registrar_vencidas(unidad_ids: list[str]) -> None:
 def crear_venta(comprador_nombre: str, comprador_email: str, total: int,
                 canal: str = "portal", orden_externa_id: str | None = None,
                 items: list[dict] | None = None,
-                transaccion_id: str | None = None) -> int:
-    """items: [{sku, cantidad, precio_unitario}, ...]"""
+                transaccion_id: str | None = None,
+                estado: str = "pendiente_pago") -> int:
+    """items: [{sku, cantidad, precio_unitario}, ...]
+    estado: pendiente_pago para el portal; orden_compra para una OC (no pasa por pago)."""
     with SessionLocal.begin() as s:
         v = Venta(comprador_nombre=comprador_nombre, comprador_email=comprador_email,
                   total=total, canal=canal, orden_externa_id=orden_externa_id,
-                  transaccion_id=transaccion_id)
+                  transaccion_id=transaccion_id, estado=estado)
         s.add(v)
         s.flush()
         for item in items or []:
@@ -339,6 +341,24 @@ def confirmar_despacho(unidad_id: str) -> None:
         u.espacio_actual = None
 
 
+def descartar_asignacion(unidad_id: str) -> None:
+    """Unidad asignada a una venta que ya no existe en Farma Central (vencio o
+    se perdio antes de salir): se quita de la venta y queda vencida, igual que
+    registrar_vencidas. Asi la venta puede recibir otra unidad."""
+    with SessionLocal.begin() as s:
+        vu = s.scalar(select(VentaUnidad).where(VentaUnidad.unidad_id == unidad_id,
+                                                VentaUnidad.estado == "pendiente"))
+        u = s.get(Unidad, unidad_id)
+        venta_id = vu.venta_id if vu is not None else None
+        if vu is not None:
+            s.delete(vu)
+        if u is not None:
+            s.add(Movimiento(unidad_id=u.id, lote_id=u.lote_id, tipo="vencimiento",
+                             desde=u.espacio_actual, hacia=None, venta_id=venta_id))
+            u.estado = "vencida"
+            u.espacio_actual = None
+
+
 def despachos_pendientes() -> list[tuple[int, str]]:
     """Para recuperarse de una caida: (venta_id, unidad_id) que quedaron a medias.
     Para cada una hay que preguntarle a Farma Central si la unidad salio o no."""
@@ -346,6 +366,35 @@ def despachos_pendientes() -> list[tuple[int, str]]:
         filas = s.execute(select(VentaUnidad.venta_id, VentaUnidad.unidad_id)
                           .where(VentaUnidad.estado == "pendiente")).all()
         return [tuple(f) for f in filas]
+
+
+def unidades_de_venta(venta_id: int) -> int:
+    """Unidades asignadas a una venta (pendientes y despachadas)."""
+    with SessionLocal() as s:
+        return s.scalar(select(sqlfunc.count()).select_from(VentaUnidad)
+                        .where(VentaUnidad.venta_id == venta_id)) or 0
+
+
+def despachadas_de_venta(venta_id: int) -> int:
+    with SessionLocal() as s:
+        return s.scalar(select(sqlfunc.count()).select_from(VentaUnidad)
+                        .where(VentaUnidad.venta_id == venta_id,
+                               VentaUnidad.estado == "despachada")) or 0
+
+
+def pendientes_de_venta(venta_id: int) -> list[str]:
+    """Unidades asignadas a la venta que aun no salen."""
+    with SessionLocal() as s:
+        return list(s.scalars(select(VentaUnidad.unidad_id)
+                              .where(VentaUnidad.venta_id == venta_id,
+                                     VentaUnidad.estado == "pendiente")
+                              .order_by(VentaUnidad.id)))
+
+
+def espacio_de(unidad_id: str) -> str | None:
+    with SessionLocal() as s:
+        u = s.get(Unidad, unidad_id)
+        return u.espacio_actual if u else None
 
 
 # ---------------------------------------------------------------------------
@@ -428,3 +477,77 @@ def stock_disponible(sku: str, margen: timedelta = timedelta(hours=1)) -> int:
             )
         ) or 0
 
+
+
+# ---------------------------------------------------------------------------
+# Retiro de lote (recall)
+# ---------------------------------------------------------------------------
+# estado "cuarentena" = retirada de circulacion: no se vende, no se consume ni
+# se despacha. espacio_actual dice si ya esta fisicamente en el area de
+# cuarentena o si aun falta moverla.
+
+def retirar_de_circulacion(unidad_ids: list[str]) -> list[tuple[str, int]]:
+    """Saca de circulacion unidades de un lote retirado ANTES de moverlas a
+    cuarentena, para que ninguna venta ni OC las tome mientras tanto. Si una
+    estaba reservada para una venta sin despachar, se quita de esa venta (la OC
+    recibira otra unidad). Idempotente: solo toca unidades en_stock o reservadas.
+    Devuelve [(unidad_id, venta_id)] de las reservas soltadas."""
+    if not unidad_ids:
+        return []
+    soltadas = []
+    with SessionLocal.begin() as s:
+        unidades = s.scalars(
+            select(Unidad).where(Unidad.id.in_(unidad_ids),
+                                 Unidad.estado.in_(("en_stock", "reservada")))
+            .with_for_update()
+        ).all()
+        for u in unidades:
+            vu = s.scalar(select(VentaUnidad).where(VentaUnidad.unidad_id == u.id,
+                                                    VentaUnidad.estado == "pendiente"))
+            if vu is not None:
+                soltadas.append((u.id, vu.venta_id))
+                s.delete(vu)
+            u.estado = "cuarentena"
+        if unidades:
+            log.warning("Retiro: %d unidades sacadas de circulacion (%d reservas soltadas)",
+                        len(unidades), len(soltadas))
+    return soltadas
+
+
+def poner_en_cuarentena(unidad_id: str) -> bool:
+    """Llamar despues de que Farma Central movio la unidad al area de cuarentena
+    (o cuando se comprobo que ya estaba ahi). Deja el movimiento y el estado."""
+    with SessionLocal.begin() as s:
+        u = s.get(Unidad, unidad_id, with_for_update=True)
+        if u is None:
+            log.error("Cuarentena de unidad %s que no esta en custodia", unidad_id)
+            return False
+        vu = s.scalar(select(VentaUnidad).where(VentaUnidad.unidad_id == u.id,
+                                                VentaUnidad.estado == "pendiente"))
+        if vu is not None:
+            s.delete(vu)
+        if u.espacio_actual != "quarantine":
+            s.add(Movimiento(unidad_id=u.id, lote_id=u.lote_id, tipo="cuarentena",
+                             desde=u.espacio_actual, hacia="quarantine"))
+            u.espacio_actual = "quarantine"
+        u.estado = "cuarentena"
+        return True
+
+
+def estado_de(unidad_id: str) -> str | None:
+    with SessionLocal() as s:
+        u = s.get(Unidad, unidad_id)
+        return u.estado if u else None
+
+
+def desasignar_retirada(unidad_id: str) -> int | None:
+    """Unidad retirada (cuarentena) que aun figura asignada a una venta sin
+    despachar: se quita de esa venta para que reciba otra unidad. La unidad no
+    cambia. Devuelve la venta de la que se quito, o None."""
+    with SessionLocal.begin() as s:
+        vu = s.scalar(select(VentaUnidad).where(VentaUnidad.unidad_id == unidad_id,
+                                                VentaUnidad.estado == "pendiente"))
+        if vu is None:
+            return None
+        s.delete(vu)
+        return vu.venta_id

@@ -2,28 +2,12 @@
 from __future__ import annotations
 
 import logging
-from contextlib import contextmanager
 
-from sqlalchemy import text
-
-from app import catalogo, custodia
+from app import catalogo, custodia, stock
 from app.config import DISPATCH_FARMA, PUBLIC_BASE_URL
-from app.db import engine
 from app.integrations import checkout
 
 log = logging.getLogger("ventas")
-LOCK_VENTA = 4_000_003
-
-
-@contextmanager
-def _candado_venta():
-    with engine.connect() as conn:
-        if not conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": LOCK_VENTA}).scalar():
-            raise RuntimeError("Hay otra venta en curso; reintenta")
-        try:
-            yield
-        finally:
-            conn.execute(text("SELECT pg_advisory_unlock(:k)"), {"k": LOCK_VENTA})
 
 
 def iniciar_checkout(nombre: str, email: str, items: list[dict]) -> dict:
@@ -31,15 +15,17 @@ def iniciar_checkout(nombre: str, email: str, items: list[dict]) -> dict:
     if not validado["ok"]:
         raise ValueError("; ".join(validado["errores"]))
 
-    with _candado_venta():
+    with stock.candado_stock(esperar_s=5):
         unidad_ids: list[str] = []
         for linea in validado["items"]:
-            disponibles = custodia.unidades_disponibles(linea["sku"])
-            if len(disponibles) < linea["cantidad"]:
+            # Las OC tienen prioridad: solo se vende lo que esta sobre el minimo
+            vendibles = stock.vendible_portal(linea["sku"])
+            if vendibles < linea["cantidad"]:
                 raise ValueError(
                     f"{linea['sku']}: stock insuficiente al reservar "
-                    f"(hay {len(disponibles)}, se piden {linea['cantidad']})"
+                    f"(hay {vendibles}, se piden {linea['cantidad']})"
                 )
+            disponibles = custodia.unidades_disponibles(linea["sku"])
             unidad_ids.extend(u.id for u in disponibles[: linea["cantidad"]])
 
         venta_id = custodia.crear_venta(

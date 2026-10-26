@@ -9,11 +9,14 @@ lot_relations   genealogia lote↔lote (N:M, materializada al nacer el lote hijo
 ventas          ventas a clientes (portal y, desde E2, otros canales)
 venta_items     lineas de la venta con precio vigente al momento de comprar
 venta_unidades  que unidades exactas se llevo cada venta
+ordenes_compra  OC recibidas por sFTP y Pub/Sub, y lo que se decidio con cada una
+archivos_sftp   archivos de la casilla sFTP ya leidos
+salud_componentes  ultima ejecucion correcta y ultimo error de cada pieza de pedidos
 """
 from datetime import datetime
 
-from sqlalchemy import (DateTime, Enum, ForeignKey, Index, Integer, MetaData, String,
-                        UniqueConstraint, func)
+from sqlalchemy import (JSON, DateTime, Enum, ForeignKey, Index, Integer, MetaData, String,
+                        Text, UniqueConstraint, func)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 # Nombres predecibles para indices y restricciones (Alembic los necesita
@@ -106,7 +109,8 @@ class Venta(Base):
     comprador_email: Mapped[str | None] = mapped_column(String(120))
     transaccion_id: Mapped[str | None] = mapped_column(String(80), unique=True)
     estado: Mapped[str] = mapped_column(
-        _enum("pendiente_pago", "pagada", "cancelada", "error", name="estado_venta"),
+        _enum("pendiente_pago", "pagada", "cancelada", "error", "orden_compra",
+              name="estado_venta"),
         default="pendiente_pago",
     )
     total: Mapped[int] = mapped_column(Integer, default=0)
@@ -179,7 +183,145 @@ class Movimiento(Base):
     venta_id: Mapped[int | None] = mapped_column(ForeignKey("ventas.id"))
 
 
+ESTADOS_OC = ("nueva", "aceptando", "aceptada", "rechazando", "rechazada",
+              "cumplida", "vencida", "descartada")
+
+
+class OrdenCompra(Base):
+    """OC recibida. La clave primaria es el id de la OC: una OC repetida por
+    cualquier canal no entra dos veces."""
+
+    __tablename__ = "ordenes_compra"
+
+    id: Mapped[str] = mapped_column(String(40), primary_key=True)
+    canal: Mapped[str] = mapped_column(_enum("sftp", "pubsub", "mensajeria", name="canal_oc"))
+    origen_ref: Mapped[str | None] = mapped_column(String(255))  # archivo o id del mensaje
+    sku: Mapped[str | None] = mapped_column(String(50), index=True)
+    cantidad: Mapped[int | None] = mapped_column(Integer)
+    vencimiento: Mapped[datetime | None] = mapped_column(Fecha)
+    cliente: Mapped[str | None] = mapped_column(String(120))
+    estado: Mapped[str] = mapped_column(_enum(*ESTADOS_OC, name="estado_oc"), default="nueva")
+    estado_remoto: Mapped[str | None] = mapped_column(String(20))
+    despachado_remoto: Mapped[int] = mapped_column(Integer, default=0)
+    venta_id: Mapped[int | None] = mapped_column(ForeignKey("ventas.id"), unique=True)
+    decision: Mapped[dict | None] = mapped_column(JSON)  # numeros vistos y motivo
+    intentos: Mapped[int] = mapped_column(Integer, default=0)
+    ultimo_error: Mapped[str | None] = mapped_column(Text)
+    recibida_en: Mapped[datetime] = mapped_column(Fecha, server_default=func.now())
+    decidida_en: Mapped[datetime | None] = mapped_column(Fecha)
+    actualizada_en: Mapped[datetime] = mapped_column(
+        Fecha, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (Index("ix_ordenes_compra_estado_vencimiento", "estado", "vencimiento"),)
+
+
+class ArchivoSftp(Base):
+    """Archivo de la casilla ya leido. La casilla puede seguir mostrandolo."""
+
+    __tablename__ = "archivos_sftp"
+
+    nombre: Mapped[str] = mapped_column(String(255), primary_key=True)
+    oc_id: Mapped[str | None] = mapped_column(String(40))  # None si el archivo era invalido
+    error: Mapped[str | None] = mapped_column(Text)
+    leido_en: Mapped[datetime] = mapped_column(Fecha, server_default=func.now())
+
+
+class SaludComponente(Base):
+    __tablename__ = "salud_componentes"
+
+    nombre: Mapped[str] = mapped_column(String(40), primary_key=True)
+    ultimo_ok: Mapped[datetime | None] = mapped_column(Fecha)
+    ultimo_error_en: Mapped[datetime | None] = mapped_column(Fecha)
+    ultimo_error: Mapped[str | None] = mapped_column(Text)
+
+
+class Mensaje(Base):
+    """Mensaje del canal de mensajeria. La clave es el messageId: un mensaje
+    repetido no se procesa dos veces. Guarda que texto se interpreto, que
+    respondio el modelo y que decidio el sistema, para revisar cada decision."""
+
+    __tablename__ = "mensajes"
+
+    id: Mapped[str] = mapped_column(String(80), primary_key=True)  # messageId
+    remitente: Mapped[str | None] = mapped_column(String(160))
+    telefono: Mapped[str | None] = mapped_column(String(40))
+    texto: Mapped[str] = mapped_column(Text, default="")
+    recibido_en: Mapped[datetime] = mapped_column(Fecha)  # receivedAt del mensaje
+    estado: Mapped[str] = mapped_column(
+        _enum("pendiente", "respondiendo", "pedido", "descartado", "sin_respuesta",
+              name="estado_mensaje"),
+        default="pendiente",
+    )
+    interpretacion: Mapped[dict | None] = mapped_column(JSON)  # salida cruda del modelo
+    decision: Mapped[dict | None] = mapped_column(JSON)  # lo que decidio el sistema y por que
+    respuesta: Mapped[dict | None] = mapped_column(JSON)  # cuerpo enviado a la plataforma
+    oc_id: Mapped[str | None] = mapped_column(String(40))
+    intentos: Mapped[int] = mapped_column(Integer, default=0)
+    ultimo_error: Mapped[str | None] = mapped_column(Text)
+    llegado_en: Mapped[datetime] = mapped_column(Fecha, server_default=func.now())
+    actualizado_en: Mapped[datetime] = mapped_column(
+        Fecha, server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (Index("ix_mensajes_estado_recibido_en", "estado", "recibido_en"),)
+
+
+class Retiro(Base):
+    """Retiro de lote (recall) emitido por Farma Central."""
+
+    __tablename__ = "retiros"
+
+    id: Mapped[str] = mapped_column(String(60), primary_key=True)  # recallId
+    lote: Mapped[str] = mapped_column(String(60))  # codigo del lote retirado (batch)
+    sku: Mapped[str | None] = mapped_column(String(50))
+    motivo: Mapped[str | None] = mapped_column(Text)
+    emitido_en: Mapped[datetime | None] = mapped_column(Fecha)
+    plazo: Mapped[datetime | None] = mapped_column(Fecha)
+    estado: Mapped[str] = mapped_column(
+        _enum("pendiente", "reportado", "completo", name="estado_retiro"), default="pendiente"
+    )
+    reporte: Mapped[dict | None] = mapped_column(JSON)  # ultimo reporte enviado
+    reportado_en: Mapped[datetime | None] = mapped_column(Fecha)
+    completado_en: Mapped[datetime | None] = mapped_column(Fecha)
+    intentos: Mapped[int] = mapped_column(Integer, default=0)
+    ultimo_error: Mapped[str | None] = mapped_column(Text)
+    recibido_en: Mapped[datetime] = mapped_column(Fecha, server_default=func.now())
+
+
+class RetiroUnidad(Base):
+    """Unidad retirada de circulacion por un retiro (lo que muestra /recalls)."""
+
+    __tablename__ = "retiro_unidades"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    retiro_id: Mapped[str] = mapped_column(ForeignKey("retiros.id"), index=True)
+    unidad_id: Mapped[str] = mapped_column(ForeignKey("unidades.id"))
+    sku: Mapped[str] = mapped_column(String(40))
+    lote_codigo: Mapped[str] = mapped_column(String(60))
+    espacio_original: Mapped[str | None] = mapped_column(String(20))
+    en_cuarentena: Mapped[bool] = mapped_column(default=False)
+
+    __table_args__ = (UniqueConstraint("retiro_id", "unidad_id", name="uq_retiro_unidades_retiro_unidad"),)
+
+
+class RetiroNotificacion(Base):
+    """Notificacion enviada a un cliente por una OC afectada (una por OC y retiro)."""
+
+    __tablename__ = "retiro_notificaciones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    retiro_id: Mapped[str] = mapped_column(ForeignKey("retiros.id"), index=True)
+    oc_id: Mapped[str] = mapped_column(String(40))
+    cuerpo: Mapped[dict] = mapped_column(JSON)
+    enviada_en: Mapped[datetime | None] = mapped_column(Fecha)
+
+    __table_args__ = (UniqueConstraint("retiro_id", "oc_id", name="uq_retiro_notificaciones_retiro_oc"),)
+
+
 __all__ = [
     "Base", "Lote", "Unidad", "Movimiento", "Solicitud", "Consumo",
     "LotRelation", "Venta", "VentaItem", "VentaUnidad",
+    "OrdenCompra", "ArchivoSftp", "SaludComponente", "ESTADOS_OC",
+    "Mensaje", "Retiro", "RetiroUnidad", "RetiroNotificacion",
 ]
