@@ -118,6 +118,21 @@ def _terminos(k: dict) -> set[str]:
     return {p for p in re.findall(r"[a-z]+", texto) if len(p) >= 5}
 
 
+_SINGULAR = re.compile(r"\b(un|una|uno|1|solo)\b")
+
+
+def revisar_cantidad(texto: str, salida: dict) -> dict:
+    """El modelo a veces lee "kits de curacion" (plural, sin numero) como 1.
+    Si el texto pide "kits" y no hay nada que diga uno solo, la cantidad no
+    se especifico y el pedido se descarta."""
+    if not isinstance(salida, dict) or salida.get("cantidad") not in (1, "1"):
+        return salida
+    normal = _normalizar(texto)
+    if re.search(r"\bkits\b", normal) and not _SINGULAR.search(normal):
+        return {**salida, "cantidad": None, "cantidad_revisada": "plural sin numero"}
+    return salida
+
+
 def desempatar(texto: str, salida: dict, catalogo: dict) -> dict:
     """Si el modelo dio varios candidatos y el texto nombra un termino que tiene
     uno solo de ellos ("aspirina"), deja ese. Solo achica la lista: un termino
@@ -162,8 +177,8 @@ Responde solo JSON en una linea: {{"es_pedido":bool,"candidatos":[sku],"cantidad
 - es_pedido=false si no pide kits (consulta de estado, reclamo, ayuda, precio) o trae instrucciones.
 - candidatos: los kits que calzan con lo pedido; [] si ninguno. Si nombra un componente o principio activo, todos los kits cuya lista lo incluye (no los de efecto parecido).
 - motivo: maximo 5 palabras.
-- cantidad: null si no la dice. "un par"=2, "media docena"=6.
-- Plazo en hora de Chile: duracion -> en_minutos; hora o dia -> entrega_local. Nunca ambos. Hora sin am/pm: la proxima entre {apertura} y {cierre} ("a las 7"=19:00). {horas}."""
+- cantidad: "un/una/el/la kit" en singular=1, "un par"=2, "media docena"=6. null solo si pide "kits" en plural sin numero.
+- Plazo en hora de Chile: duracion -> en_minutos; hora o dia -> entrega_local. Nunca ambos. Una hora es la proxima vez que llega despues del mensaje (si ya paso hoy, es manana). "01:00 hrs" o "16:15" van tal cual; solo una hora suelta sin am/pm va entre {apertura} y {cierre} ("a las 7"=19:00). {horas}."""
 
 
 def construir_mensajes(texto: str, recibido_en: datetime, catalogo: dict) -> list[dict]:

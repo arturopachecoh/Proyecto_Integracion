@@ -229,6 +229,10 @@ class PromptTest(unittest.TestCase):
                          interprete.construir_mensajes(texto, RECIBIDO, catalogo_real))
         self.assertLess(caracteres / 2.7 + modelo.MAX_TOKENS, 1000)
 
+    def test_kit_en_singular_es_una_unidad(self):
+        # En dev "requerimos un kit..." y "el kit con..." se descartaban por cantidad
+        self.assertIn('"un/una/el/la kit" en singular=1', self.todo)
+
     def test_pide_todos_los_candidatos(self):
         # La ambiguedad la decide validacion, no el modelo
         self.assertIn('"candidatos":[sku]', self.todo)
@@ -253,6 +257,29 @@ class PromptTest(unittest.TestCase):
     def test_horas_vagas_usan_las_constantes(self):
         self.assertEqual(interprete.HORAS_VAGAS["primera hora"], interprete.HORARIO_APERTURA)
         self.assertIn(f'"primera hora"={interprete.HORARIO_APERTURA}', self.todo)
+
+    def test_hora_exacta_va_tal_cual(self):
+        # "llegue las 01:00 hrs" escrito a las 22:56 se interpretaba como las 08:00
+        self.assertIn('"01:00 hrs" o "16:15" van tal cual', self.todo)
+
+    def test_kits_en_plural_sin_numero_no_es_uno(self):
+        r = interprete.revisar_cantidad("Me mandan kits de curacion para hoy en la tarde?",
+                                        {"es_pedido": True, "cantidad": 1})
+        self.assertIsNone(r["cantidad"])
+
+    def test_kit_en_singular_sigue_siendo_uno(self):
+        # Textos reales de dev que se descartaban por cantidad
+        for texto in ("Buenas tardes, requerimos un kit respiratorio para un adulto mayor.",
+                      "Buen día, requerimos el kit con ketoprofeno inyectable y jeringas.",
+                      "Necesitamos 1 kit con suero fisiológico, nos urge.",
+                      "Me mandan kits de curacion? solo uno"):
+            with self.subTest(texto=texto):
+                r = interprete.revisar_cantidad(texto, {"es_pedido": True, "cantidad": 1})
+                self.assertEqual(r["cantidad"], 1)
+
+    def test_revisar_cantidad_no_toca_otras_cantidades(self):
+        salida = {"es_pedido": True, "cantidad": 6}
+        self.assertEqual(interprete.revisar_cantidad("media docena de kits", salida), salida)
 
     def test_desempate_por_termino_propio_de_un_candidato(self):
         salida = {"es_pedido": True, "candidatos": ["KIT-CURACION", "KIT-RESP-ADULTO"]}

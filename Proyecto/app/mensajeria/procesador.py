@@ -147,7 +147,7 @@ def _decidir(message_id: str) -> None:
         return
 
     _salud_modelo(None)
-    salida = interprete.desempatar(m.texto, salida, cat)
+    salida = interprete.revisar_cantidad(m.texto, interprete.desempatar(m.texto, salida, cat))
     resultado = validacion.validar(salida, validacion.skus_kit(cat), m.recibido_en, _ahora())
     log.info("Mensaje %s: %s (%s)", message_id, resultado.cuerpo["status"],
              resultado.motivo or resultado.cuerpo.get("interpretation"))
