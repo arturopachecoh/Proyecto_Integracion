@@ -92,6 +92,8 @@ def _pedir_con_pow(sku: str, cantidad: int) -> tuple[dict, str]:
             if e.response.status_code == 409:
                 log.warning("Desafio expirado o usado (intento %d), pido otro", intento)
                 continue
+            log.error("Farma rechazo %d x %s (%d): %s", cantidad, sku,
+                      e.response.status_code, e.response.text[:500])
             raise
     raise RuntimeError(f"No se pudo completar la solicitud de {sku} tras {MAX_INTENTOS} intentos")
 
