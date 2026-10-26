@@ -28,7 +28,12 @@ from app.pedidos import bandeja
 log = logging.getLogger("mensajeria")
 
 LOCK_MENSAJERIA = 4_000_011  # candado de Postgres (retiros usa 4_000_010)
-POR_TICK = 3  # mensajes que se interpretan por tick (cada uno puede tardar ~40 s)
+# Mensajes que se interpretan por tick. Uno: el gateway admite ~1 prompt por
+# minuto (1.000 tokens/min por grupo) y un segundo intento seguido solo recibe 429
+POR_TICK = 1
+# Separacion entre llamadas al modelo para no pasar el cupo por minuto del gateway
+ENTRE_LLAMADAS = timedelta(seconds=60)
+_ultima_llamada: datetime | None = None
 VENTANA = timedelta(minutes=30)  # la plataforma acepta la respuesta hasta aqui
 CORTE_INTERPRETACION = timedelta(minutes=25)
 ESPERA_BASE_S = 10
@@ -79,6 +84,8 @@ def procesar_pendientes(por_tick: int = POR_TICK) -> int:
                 _seguro(_enviar, m.id)
                 hechos += 1
         interpretados = 0
+        if _ultima_llamada is not None and _ahora() < _ultima_llamada + ENTRE_LLAMADAS:
+            return hechos
         for m in registro.en_estado("pendiente", limite=50):
             if interpretados >= por_tick:
                 break
@@ -122,8 +129,10 @@ def _decidir(message_id: str) -> None:
         _preparar_descarte_por_plazo(m)
         return _enviar(message_id)
 
+    global _ultima_llamada
     try:
         cat = catalogo()
+        _ultima_llamada = _ahora()
         salida, crudo = interprete.interpretar(m.texto, m.recibido_en, cat)
     except Exception as e:
         # Modelo caido, presupuesto agotado, JSON invalido o catalogo no disponible
@@ -138,6 +147,7 @@ def _decidir(message_id: str) -> None:
         return
 
     _salud_modelo(None)
+    salida = interprete.desempatar(m.texto, salida, cat)
     resultado = validacion.validar(salida, validacion.skus_kit(cat), m.recibido_en, _ahora())
     log.info("Mensaje %s: %s (%s)", message_id, resultado.cuerpo["status"],
              resultado.motivo or resultado.cuerpo.get("interpretation"))

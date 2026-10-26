@@ -83,8 +83,12 @@ class BaseDB(unittest.TestCase):
                                          "Necesito dos kits respiratorios", _ahora() - hace))
         return mid
 
-    def tick(self, salida=None, plataforma=None, modelo_error=None, por_tick=3):
-        """Corre un tick con el modelo y la plataforma parcheados."""
+    def tick(self, salida=None, plataforma=None, modelo_error=None, por_tick=3,
+             esperar_gateway=False):
+        """Corre un tick con el modelo y la plataforma parcheados. Por defecto
+        simula que ya paso la separacion entre llamadas al gateway."""
+        if not esperar_gateway:
+            procesador._ultima_llamada = None
         kw_modelo = {"side_effect": modelo_error} if modelo_error else {"return_value": salida}
         if isinstance(plataforma, (list, Exception)):
             kw_plat = {"side_effect": plataforma}
@@ -314,6 +318,16 @@ class ProcesadorTest(BaseDB):
             self.mensaje()
         llm, _ = self.tick(NO_PEDIDO, (200, {"status": "discarded"}), por_tick=3)
         self.assertEqual(llm.call_count, 3)
+
+    def test_espera_entre_llamadas_al_gateway(self):
+        # El gateway admite ~1 prompt por minuto: el tick siguiente no llama al modelo
+        self.mensaje()
+        self.mensaje()
+        llm, _ = self.tick(NO_PEDIDO, (200, {"status": "discarded"}), por_tick=1)
+        self.assertEqual(llm.call_count, 1)
+        llm, _ = self.tick(NO_PEDIDO, (200, {"status": "discarded"}), por_tick=1,
+                           esperar_gateway=True)
+        self.assertEqual(llm.call_count, 0)
 
     def test_otro_procesador_corriendo_salta_el_tick(self):
         self.mensaje()

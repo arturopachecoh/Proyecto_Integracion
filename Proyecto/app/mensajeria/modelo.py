@@ -13,7 +13,9 @@ log = logging.getLogger("mensajeria")
 _aviso_sin_configurar = False
 
 TIMEOUT_S = 40
-MAX_TOKENS = 600
+# El JSON de respuesta pesa ~50 tokens; el gateway cuenta entrada + salida
+# contra un cupo de 1.000 tokens por minuto
+MAX_TOKENS = 150
 
 
 class ModeloNoDisponible(Exception):

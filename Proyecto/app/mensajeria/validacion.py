@@ -89,12 +89,23 @@ def validar(salida, kits: set[str], recibido_en: datetime, ahora: datetime) -> R
         return _descartar(f"No corresponde a un pedido: {motivo_modelo}" if motivo_modelo
                           else "No corresponde a un pedido", pasos)
     pasos.append("el modelo indica que es un pedido")
-    if salida.get("cumplible") is not True:
-        return _descartar(f"Pedido no se puede cumplir tal como esta escrito: {motivo_modelo}"
-                          if motivo_modelo else "Pedido ambiguo o imposible de cumplir", pasos)
-
-    sku = salida.get("sku")
-    sku = sku.strip().upper() if isinstance(sku, str) else ""
+    if "candidatos" in salida:
+        # El modelo lista los kits que calzan; la ambiguedad la decide el codigo
+        candidatos = salida.get("candidatos")
+        if not isinstance(candidatos, list):
+            return _descartar("No se pudo identificar el kit pedido", pasos)
+        skus = sorted({c.strip().upper() for c in candidatos if isinstance(c, str) and c.strip()})
+        pasos.append(f"candidatos: {skus}")
+        if len(skus) > 1:
+            return _descartar(f"Pedido ambiguo entre {', '.join(skus)}", pasos)
+        sku = skus[0] if skus else ""
+    else:
+        if salida.get("cumplible") is not True:
+            return _descartar(f"Pedido no se puede cumplir tal como esta escrito: {motivo_modelo}"
+                              if motivo_modelo else "Pedido ambiguo o imposible de cumplir",
+                              pasos)
+        sku = salida.get("sku")
+        sku = sku.strip().upper() if isinstance(sku, str) else ""
     if sku not in kits:
         return _descartar(f"El producto pedido no es un kit del catalogo ({sku or 'sin SKU'})",
                           pasos)
