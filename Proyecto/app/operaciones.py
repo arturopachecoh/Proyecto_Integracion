@@ -200,6 +200,16 @@ def fabricar(sku: str, cantidad: int) -> int:
 
         try:
             resp, challenge_id = _pedir_con_pow(sku, cantidad)
+        except httpx.HTTPStatusError as e:
+            # Un 400 puede ser porque custodia cree tener unidades que Farma ya no
+            # tiene: si no se sacan, se eligen otra vez y la fabricacion nunca resulta
+            perdidas = _no_estan_en_farma(todas) if e.response.status_code == 400 else set()
+            if perdidas:
+                log.error("Fabricacion de %s rechazada: %d unidades ya no estan en Farma, "
+                          "se sacan de custodia: %s", sku, len(perdidas), sorted(perdidas))
+                custodia.registrar_vencidas(sorted(perdidas))
+            _devolver_al_frio([u for u in frias_movidas if u.id not in perdidas])
+            raise
         except Exception:
             _devolver_al_frio(frias_movidas)
             raise
@@ -218,6 +228,20 @@ def fabricar(sku: str, cantidad: int) -> int:
         log.info("Fabricacion #%d: %d x %s, llega %s", solicitud_id, cantidad, sku,
                  resp["availableAt"])
         return solicitud_id
+
+
+def _no_estan_en_farma(unidades) -> set[str]:
+    """Ids de las unidades (ya movidas a acondicionamiento) que Farma no tiene ahi.
+    Si no se puede consultar, no se marca nada."""
+    store = esp.store_id("packaging")
+    presentes: set[str] = set()
+    try:
+        for sku in {u.sku for u in unidades}:
+            presentes |= {p["_id"] for p in farma_client.space_products(store, sku, limit=200) or []}
+    except Exception:
+        log.exception("No se pudo revisar acondicionamiento en Farma")
+        return set()
+    return {u.id for u in unidades} - presentes
 
 
 def _devolver_al_frio(unidades) -> None:

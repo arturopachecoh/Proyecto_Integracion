@@ -3,11 +3,12 @@ from __future__ import annotations
 
 import os
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://farma:x@localhost/farma")
 
-from app import produccion, reposicion  # noqa: E402
+from app import operaciones, produccion, reposicion  # noqa: E402
 
 CATALOGO = {"KIT-A": {"sellable": True}, "KIT-B": {"sellable": True},
             "API-X": {"sellable": False}}
@@ -74,6 +75,14 @@ class ProducirTest(unittest.TestCase):
             r = produccion.producir({"KIT-A": 2, "KIT-B": 1})
         self.assertEqual(llamadas, [{"KIT-A": 2, "KIT-B": 1}, {"KIT-A": 0, "KIT-B": 1}])
         self.assertEqual(r, {"KIT-A": 2, "KIT-B": 1})
+
+
+class UnidadesPerdidasTest(unittest.TestCase):
+    def test_detecta_las_que_farma_no_tiene(self):
+        unidades = [SimpleNamespace(id="a", sku="VIA"), SimpleNamespace(id="b", sku="VIA")]
+        with patch.object(operaciones.esp, "store_id", return_value="pack"), \
+             patch.object(operaciones.farma_client, "space_products", return_value=[{"_id": "a"}]):
+            self.assertEqual(operaciones._no_estan_en_farma(unidades), {"b"})
 
 
 if __name__ == "__main__":

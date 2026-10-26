@@ -44,7 +44,7 @@ PUBSUB_KEY_FILE = os.getenv("PUBSUB_KEY_FILE", f"keys/pubsub-{FARMA_ENV}.json")
 
 # Pedidos
 MARGEN_DESPACHO_MIN = int(os.getenv("MARGEN_DESPACHO_MIN", "20"))
-STOCK_MINIMO_DEFAULT = int(os.getenv("STOCK_MINIMO_DEFAULT", "3"))
+STOCK_MINIMO_DEFAULT = int(os.getenv("STOCK_MINIMO_DEFAULT", "5"))
 STOCK_MINIMO = os.getenv("STOCK_MINIMO", "")  # excepciones: "KIT-DIABETES=2,KIT-GASTRO=4"
 
 # Webhooks firmados por Google (token OIDC de una cuenta de servicio del curso)
