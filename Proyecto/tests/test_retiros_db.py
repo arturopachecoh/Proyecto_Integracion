@@ -200,6 +200,13 @@ class InvestigacionTest(BaseRetiro):
             sorted([(self.inter.codigo, self.sku_int, self.raiz.codigo),
                     (self.kit.codigo, self.sku_kit, self.inter.codigo)]))
 
+    def test_lote_con_dos_padres_afectados_va_una_vez_por_padre(self):
+        with SessionLocal.begin() as s:
+            s.add(LotRelation(parent_lote_id=self.raiz.id, child_lote_id=self.kit.id,
+                              cantidad=1, solicitud_id=self.kit.solicitud_id))
+        inv = investigacion.investigar(self.raiz.codigo)
+        self.assertEqual(len(inv["derivados"]), 3)
+
     def test_unidades_en_stock_solo_del_lote_y_sus_derivados(self):
         inv = investigacion.investigar(self.raiz.codigo)
         self.assertEqual({u["unidad_id"] for u in inv["en_stock"]}, self.en_stock_esperado())

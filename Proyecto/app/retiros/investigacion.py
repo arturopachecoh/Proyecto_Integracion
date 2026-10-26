@@ -23,7 +23,7 @@ from sqlalchemy import or_, select
 
 from app import trazabilidad
 from app.db import SessionLocal
-from app.models import Lote, OrdenCompra, Unidad, Venta, VentaUnidad
+from app.models import Lote, LotRelation, OrdenCompra, Unidad, Venta, VentaUnidad
 
 log = logging.getLogger("retiros")
 
@@ -55,14 +55,23 @@ def investigar(codigo: str) -> dict:
             return _vacia()
         raiz_id, raiz_codigo = lote.id, lote.codigo
 
-    # Pregunta 2: el sourceBatch es el padre directo de cada derivado
+    # Pregunta 2: el sourceBatch es el padre directo de cada derivado. Un lote
+    # fabricado con insumos de dos lotes afectados va una vez por cada padre
+    # (asi lo cuenta Farma Central; aguas_abajo deja solo el primero)
     nodos = trazabilidad.aguas_abajo(raiz_codigo) or []
     codigos = {raiz_id: raiz_codigo} | {n["id"]: n["codigo"] for n in nodos}
-    derivados = sorted(
-        ({"batch": n["codigo"], "sku": n["sku"], "sourceBatch": codigos[n["desde_lote_id"]]}
-         for n in nodos),
-        key=lambda d: d["batch"])
+    skus = {n["id"]: n["sku"] for n in nodos}
     ids = list(codigos)
+    with SessionLocal() as s:
+        pares = s.execute(
+            select(LotRelation.child_lote_id, LotRelation.parent_lote_id).distinct()
+            .where(LotRelation.child_lote_id.in_(list(skus)),
+                   LotRelation.parent_lote_id.in_(ids))
+        ).all()
+    derivados = sorted(
+        ({"batch": codigos[hijo], "sku": skus[hijo], "sourceBatch": codigos[padre]}
+         for hijo, padre in pares),
+        key=lambda d: (d["batch"], d["sourceBatch"]))
 
     ahora = datetime.now(timezone.utc)
     with SessionLocal() as s:
