@@ -1,5 +1,5 @@
 import { NavLink, Route, Routes } from "react-router-dom";
-import { FiList, FiPackage, FiSearch, FiShoppingCart } from "react-icons/fi";
+import { FiAlertTriangle, FiList, FiPackage, FiSearch, FiShoppingCart } from "react-icons/fi";
 import { useEffect, useState } from "react";
 import Catalogo from "./pages/Catalogo";
 import Carrito from "./pages/Carrito";
@@ -32,6 +32,7 @@ export default function App() {
           <NavLink to="/carrito"><FiShoppingCart /> Carro{n > 0 && <span className="badge">{n}</span>}</NavLink>
           <NavLink to="/trazabilidad"><FiSearch /> Trazabilidad</NavLink>
           <NavLink to="/pedidos"><FiList /> Pedidos</NavLink>
+          <NavLink to="/recalls"><FiAlertTriangle /> Retiros</NavLink>
         </nav>
       </header>
       <main>

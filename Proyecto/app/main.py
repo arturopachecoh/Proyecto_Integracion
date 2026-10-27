@@ -6,8 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import catalogo, salud, trazabilidad, ventas
-from app import catalogo, custodia, trazabilidad, ventas
+from app import catalogo, custodia, salud, trazabilidad, ventas
 from app.config import FARMA_ENV, PUBLIC_BASE_URL
 from app.db import db_ok
 from app.integrations.checkout import resultado_mock
