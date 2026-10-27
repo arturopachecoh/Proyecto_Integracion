@@ -133,6 +133,22 @@ def revisar_cantidad(texto: str, salida: dict) -> dict:
     return salida
 
 
+_SUELTO = re.compile(r"\b(blisteres|blister|cajas?|frascos?|tubos?|ampollas?|viales|vial|sobres?"
+                     r"|comprimidos?|tabletas?|capsulas?)\b")
+
+
+def revisar_suelto(texto: str, salida: dict) -> dict:
+    """El modelo lee "2 blisteres de losartan" como el kit que trae losartan.
+    Si el texto no dice "kit" y pide un envase suelto, no es un kit del
+    catalogo y se descarta."""
+    if not isinstance(salida, dict) or salida.get("es_pedido") is not True:
+        return salida
+    normal = _normalizar(texto)
+    if "kit" not in normal and _SUELTO.search(normal):
+        return {**salida, "es_pedido": False, "motivo": "pide producto suelto, no un kit"}
+    return salida
+
+
 def desempatar(texto: str, salida: dict, catalogo: dict) -> dict:
     """Si el modelo dio varios candidatos y el texto nombra un termino que tiene
     uno solo de ellos ("aspirina"), deja ese. Solo achica la lista: un termino
