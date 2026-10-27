@@ -1,4 +1,6 @@
-# 03 — Prompt maestro para Cursor: analizar repo, planificar y preparar Entrega 1
+# Prompt 1 — Analizar repo, planificar y preparar Entrega 1
+
+Prompt maestro usado con Cursor para la Entrega 1 (IIC3103). Conservado como trazabilidad del uso de IA.
 
 ## Rol
 
@@ -23,8 +25,8 @@ Tu prioridad es:
 Antes de tocar código, lee completamente:
 
 ```text
-01_enunciado_proyecto_llm.md
-02_arquitectura_decisiones_entrega1.md
+docs/01_enunciado_proyecto_llm.md
+docs/prompts/prompt-arquitectura-decisiones.md
 ```
 
 Regla de precedencia:
@@ -1142,8 +1144,8 @@ Busca que un integrante del grupo pueda defender cada decisión frente al profes
 
 Ahora:
 
-1. lee `01_enunciado_proyecto_llm.md`;
-2. lee `02_arquitectura_decisiones_entrega1.md`;
+1. lee `docs/01_enunciado_proyecto_llm.md`;
+2. lee `docs/prompts/prompt-arquitectura-decisiones.md`;
 3. usa Codebase Memory;
 4. usa Graphyfy/Graphify;
 5. inspecciona Git;

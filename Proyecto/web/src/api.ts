@@ -60,45 +60,60 @@ export async function crearCheckout(payload: {
   return data as { redirect_url: string; venta_id: number };
 }
 
-export type RetiroResumen = {
-  id: string;
-  lote: string;
-  sku: string | null;
-  motivo: string | null;
-  emitido_en: string | null;
-  plazo: string | null;
-  estado: "pendiente" | "reportado" | "completo";
-  recibido_en: string | null;
-  reportado_en: string | null;
-  completado_en: string | null;
-  unidades_retiradas: number;
+export type LoteVenta = { codigo: string; sku: string };
+
+export type VentaResumen = {
+  id: number;
+  estado: string;
+  total: number;
+  transaccion_id: string | null;
+  comprador_nombre: string | null;
+  comprador_email: string | null;
+  creada_en: string | null;
+  pagada_en: string | null;
+  lotes: LoteVenta[];
+  items: { sku: string; cantidad: number; precio_unitario: number }[];
 };
 
-export type RetiroDetalle = RetiroResumen & {
-  unidades: {
-    id: string;
-    sku: string;
-    lote: string;
-    espacio_original: string | null;
-    en_cuarentena: boolean;
+export async function confirmarCheckout(ventaId: number, resultado: string) {
+  const r = await fetch("/api/checkout/confirmar", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ venta_id: ventaId, resultado }),
+  });
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.detail || "No se pudo confirmar el pago");
+  return data as {
+    venta_id: number;
     estado: string;
-    espacio_actual: string | null;
-  }[];
-  derivados: { batch: string; sku: string; sourceBatch: string }[];
-  entregas: { orderId: string; customerName: string; productIds: string[] }[];
-  notificaciones: { oc_id: string; cliente: string | null; unidades: number; enviada_en: string | null }[];
-  ultimo_error: string | null;
-};
-
-export async function getRetiros(): Promise<RetiroResumen[]> {
-  const r = await fetch("/api/recalls");
-  if (!r.ok) throw new Error("No se pudieron cargar los retiros");
-  return r.json();
+    lotes: LoteVenta[];
+    transaccion_id?: string | null;
+  };
 }
 
-export async function getRetiro(id: string): Promise<RetiroDetalle | null> {
-  const r = await fetch(`/api/recalls/${encodeURIComponent(id)}`);
-  if (r.status === 404) return null;
-  if (!r.ok) throw new Error("No se pudo cargar el retiro");
-  return r.json();
+export async function getVentas(): Promise<VentaResumen[]> {
+  const r = await fetch("/api/ventas");
+  if (!r.ok) throw new Error("No se pudieron cargar los pedidos");
+  const data = await r.json();
+  return (data.ventas || []) as VentaResumen[];
+}
+
+export type GrupoLotes = {
+  sku: string;
+  hay_mas?: boolean;
+  lotes: {
+    codigo: string;
+    unidades: number;
+    en_stock: number;
+    despachada: number;
+    vence_en: string | null;
+  }[];
+};
+
+export async function getLotes(q = ""): Promise<GrupoLotes[]> {
+  const url = q.trim() ? `/api/lotes?q=${encodeURIComponent(q.trim())}` : "/api/lotes";
+  const r = await fetch(url);
+  if (!r.ok) throw new Error("No se pudieron cargar los códigos de lote");
+  const data = await r.json();
+  return (data.grupos || []) as GrupoLotes[];
 }

@@ -1,36 +1,35 @@
-# Distribuidora 4 - IIC3103
+# Distribuidora 4 — IIC3103
 
-Portal: `/` · Trazabilidad: `/trazabilidad` · Health: `/health`
+Grupo 4. Portal de venta, visor de trazabilidad y custodia (FastAPI + worker + Postgres + SPA Vite).
 
-## Correr en local (ambiente dev)
+## URLs
 
-    cp .env.example .env        # completar secretos; CHECKOUT_MODE=mock por defecto
-    docker compose up --build
-    docker compose run --rm web alembic upgrade head
-    docker compose run --rm worker python -m app.scripts.sembrar_demo   # grafo + stock demo (opcional)
-    python -m unittest tests/test_checkout_pow.py
-    npx --yes playwright@1.55.1 install chromium
-    npx --yes playwright@1.55.1 test --config playwright.config.ts
-    # abrir http://localhost:3000  y  /trazabilidad?lote=L-DEMO-BLIAMOXI-7F3A
+| Qué | Dónde |
+|---|---|
+| Portal | https://choripan4.ing.uc.cl/ |
+| Visor | https://choripan4.ing.uc.cl/trazabilidad |
+| Pedidos | https://choripan4.ing.uc.cl/pedidos |
+| Health | https://choripan4.ing.uc.cl/health |
 
-El frontend se construye en la imagen (Vite → `web/dist`). En el servidor no corre Node.
+El hostname del enunciado (`distribuidor4.ing.uc.cl`) no resuelve. El HTTPS público es **choripan4**.
 
-## Deploy en el servidor (ambiente prod)
+Local: `http://127.0.0.1:3000` (Docker publica Uvicorn ahí; Nginx en el servidor hace proxy a ese puerto).
 
-    cd ~/distribuidora4
-    git pull
-    docker compose up -d --build
-    docker compose ps
-    curl http://127.0.0.1:3000/health
+Diagramas de secuencia: [`docs/diagramas.md`](docs/diagramas.md). Prompts de IA: [`docs/prompts/`](docs/prompts/). Declaración: [`docs/declaracion-uso-ia.md`](docs/declaracion-uso-ia.md).
 
-Ver logs:
+## Levantar en local
 
-    docker compose logs -f web
-    docker compose logs -f worker
+```bash
+cp .env.example .env
+# Completar secretos en .env. Defaults razonables:
+#   CHECKOUT_MODE=mock
+#   DISPATCH_FARMA=0
 
-NUNCA usar `docker compose down -v`: borra la base de datos (y el registro de custodia).
+docker compose up --build
+docker compose run --rm web alembic upgrade head
+```
 
-## Probar el solver de PoW
+Portal en `http://127.0.0.1:3000`. El frontend se construye en la imagen (Vite → `web/dist`). En el servidor no corre Node.
 
     docker compose run --rm worker python -m app.pow
 
@@ -52,3 +51,43 @@ Estado en vivo:
 
     curl http://127.0.0.1:3000/api/salud/pedidos
     docker compose logs -f pedidos reponedor
+Producir kits (el worker tiene que estar arriba: registra llegadas y cuida el frío):
+
+```bash
+docker compose run --rm worker python -m app.scripts.producir KIT-RESP-ADULTO 3 --plan
+```
+
+En PROD el script pide confirmar. No correr `sembrar_demo` en PROD.
+
+Tests:
+
+```bash
+python -m unittest tests/test_checkout_pow.py
+```
+
+## Deploy (PROD)
+
+En la VM, directorio `~/Proyecto_Integracion/Proyecto`:
+
+```bash
+git pull
+docker compose stop worker
+docker compose build web
+docker compose up -d web
+docker compose up -d worker
+docker compose ps
+curl -sS http://127.0.0.1:3000/health
+```
+
+**Nunca** `docker compose down -v`: borra el volumen `pgdata` y el registro de custodia.
+
+Logs: `docker compose logs -f web` / `worker`.
+
+## Declaración de uso de IA
+
+Texto completo: [`docs/declaracion-uso-ia.md`](docs/declaracion-uso-ia.md).
+
+Los dos prompts con los que se trabajó en Cursor:
+
+- [`docs/prompts/prompt-analisis-plan.md`](docs/prompts/prompt-analisis-plan.md)
+- [`docs/prompts/prompt-arquitectura-decisiones.md`](docs/prompts/prompt-arquitectura-decisiones.md)

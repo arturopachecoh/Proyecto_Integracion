@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { getTrazabilidad } from "../api";
+import { getLotes, getTrazabilidad, getVentas, type GrupoLotes, type VentaResumen } from "../api";
 
 const ORIGEN: Record<string, string> = {
   farma_central: "Farma Central",
@@ -163,7 +163,7 @@ export default function Trazabilidad() {
       {loading && <p className="muted">Consultando lote…</p>}
       {error && <p className="error" role="alert">{error}</p>}
       {!loading && !data && !error && (
-        <p className="empty">Ingresa un código de lote (también vale <code>?lote=</code> en la URL).</p>
+        <p className="empty">Elige un código de la lista o pégalo arriba. También vale <code>?lote=</code> en la URL.</p>
       )}
 
       {data && (
@@ -259,6 +259,15 @@ export default function Trazabilidad() {
           </details>
         </>
       )}
+
+      <Explorador
+        seleccionado={inicial}
+        onElegir={(codigo) => {
+          setLote(codigo);
+          setParams({ lote: codigo });
+          window.scrollTo({ top: 0, behavior: "smooth" });
+        }}
+      />
     </div>
   );
 }
@@ -299,5 +308,103 @@ function Clientes({ filas }: { filas: any[] }) {
         </li>
       ))}
     </ul>
+  );
+}
+
+function Explorador({
+  seleccionado,
+  onElegir,
+}: {
+  seleccionado: string;
+  onElegir: (codigo: string) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [grupos, setGrupos] = useState<GrupoLotes[]>([]);
+  const [ventas, setVentas] = useState<VentaResumen[]>([]);
+  const [err, setErr] = useState("");
+
+  useEffect(() => {
+    const t = setTimeout(() => {
+      getLotes(q).then(setGrupos).catch((e) => setErr(String(e.message || e)));
+    }, 200);
+    return () => clearTimeout(t);
+  }, [q]);
+
+  useEffect(() => {
+    getVentas().then(setVentas).catch(() => undefined);
+  }, []);
+
+  const pagadas = ventas.filter((v) => v.estado === "pagada" && v.lotes.length);
+
+  return (
+    <div className="explorer">
+      <section className="card">
+        <h2>Códigos de lote (kits)</h2>
+        <p className="muted">No hace falta memorizarlos: filtra por SKU o código y pulsa para consultar.</p>
+        <div className="field">
+          <label htmlFor="filtro-lote">Filtrar</label>
+          <input
+            id="filtro-lote"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="KIT-DERMATO o L-KIT-…"
+          />
+        </div>
+        {err && <p className="error">{err}</p>}
+        <div className="sku-list">
+          {grupos.map((g) => (
+            <div key={g.sku} className="sku-group">
+              <div className="sku-head">
+                <strong>{g.sku}</strong>
+                <span className="muted">{g.lotes.length} lote{g.lotes.length === 1 ? "" : "s"}{g.hay_mas ? "+" : ""}</span>
+              </div>
+              <div className="chip-row">
+                {g.lotes.map((l) => (
+                  <button
+                    key={l.codigo}
+                    type="button"
+                    className={`chip${seleccionado === l.codigo ? " chip-on" : ""}`}
+                    onClick={() => onElegir(l.codigo)}
+                    title={`${l.en_stock} en stock · ${l.despachada} despachadas`}
+                  >
+                    <code>{l.codigo}</code>
+                    <span className="muted">{l.en_stock} en stock · {l.despachada} desp.</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+          {grupos.length === 0 && <p className="muted">Ningún kit coincide.</p>}
+        </div>
+      </section>
+
+      <section className="card">
+        <h2>Transacciones recientes</h2>
+        <p className="muted">Pedidos pagados y el lote que salió. Bitácora completa en Pedidos.</p>
+        {pagadas.length === 0 ? (
+          <p className="muted">Todavía no hay ventas pagadas.</p>
+        ) : (
+          <ul className="tx-list">
+            {pagadas.slice(0, 8).map((v) => (
+              <li key={v.id}>
+                <div>
+                  <strong>Pedido #{v.id}</strong>
+                  <div className="muted">{v.comprador_nombre} · {fmtFecha(v.pagada_en || v.creada_en)}</div>
+                  {v.transaccion_id && <div className="mono muted">tx {v.transaccion_id}</div>}
+                </div>
+                <div className="chip-row">
+                  {v.lotes.map((l) => (
+                    <button key={l.codigo} type="button" className="chip" onClick={() => onElegir(l.codigo)}>
+                      <code>{l.codigo}</code>
+                    </button>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        <Link className="btn ghost" to="/pedidos">Ver todos los pedidos</Link>
+      </section>
+    </div>
   );
 }

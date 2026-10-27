@@ -45,7 +45,7 @@ export default function Checkout() {
   }
 
   if (!items.length) {
-    return <p className="empty">No hay productos para pagar. <Link to="/">Ir al catálogo</Link></p>;
+    return <p className="empty">No hay productos para pagar. <Link className="btn" to="/">Ir al catálogo</Link></p>;
   }
 
   return (
@@ -71,7 +71,9 @@ export default function Checkout() {
         </div>
         <p>Total a pagar: <strong>{clp(total)}</strong></p>
         {error && <p className="error" role="alert">{error}</p>}
-        <button type="submit" disabled={enviando || Boolean(error)}>{enviando ? "Abriendo pasarela…" : "Pagar"}</button>
+        <button type="submit" disabled={enviando || Boolean(error) || total < 1}>
+          {enviando ? "Abriendo pasarela…" : "Pagar"}
+        </button>
       </form>
     </>
   );

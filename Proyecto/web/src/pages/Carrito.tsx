@@ -43,7 +43,7 @@ export default function Carrito() {
     <>
       <h1>Carro de compras</h1>
       {items.length === 0 ? (
-        <p className="empty">El carro está vacío. <Link to="/">Volver al catálogo</Link></p>
+        <p className="empty">El carro está vacío. <Link className="btn" to="/">Volver al catálogo</Link></p>
       ) : (
         <>
           <table className="table">
@@ -88,9 +88,11 @@ export default function Carrito() {
           {loading && <p className="muted">Validando stock y precio vigente…</p>}
           {errores.map((e) => <p key={e} className="error" role="alert">{e}</p>)}
           <p className="precio">Total: {clp(total)}</p>
-          {errores.length
-            ? <button type="button" disabled>Corrige el carro para pagar</button>
-            : <Link className="btn" to="/checkout">Confirmar compra</Link>}
+          {loading
+            ? <button type="button" disabled>Validando stock…</button>
+            : errores.length
+              ? <button type="button" disabled>Corrige el carro para pagar</button>
+              : <Link className="btn" to="/checkout">Confirmar compra</Link>}
         </>
       )}
     </>
