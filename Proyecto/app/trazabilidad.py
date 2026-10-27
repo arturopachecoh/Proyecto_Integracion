@@ -201,8 +201,12 @@ def _clientes(s, lote_ids: list[int]) -> list[dict]:
             "sku": f.sku,
             "estado_despacho": f.estado_despacho,
         })
-    # Pregunta 3: "se entregaron" = venta pagada (no reservas ni errores).
-    return [v for v in por_venta.values() if v["estado"] == "pagada"]
+    # Pregunta 3: "se entregaron" = venta pagada del portal (no reservas ni errores)
+    # o venta de una OC con al menos una unidad ya despachada.
+    return [v for v in por_venta.values()
+            if v["estado"] == "pagada"
+            or (v["estado"] == "orden_compra"
+                and any(u["estado_despacho"] == "despachada" for u in v["unidades"]))]
 
 
 def clientes_del_lote(codigo: str) -> list[dict] | None:
