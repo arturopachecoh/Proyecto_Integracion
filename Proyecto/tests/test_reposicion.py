@@ -17,6 +17,7 @@ CATALOGO = {"KIT-A": {"sellable": True}, "KIT-B": {"sellable": True},
 class FaltantesTest(unittest.TestCase):
     def _faltantes(self, stock, en_camino, comprometido, minimo=3):
         with patch.object(reposicion, "catalogo", return_value=CATALOGO), \
+             patch.object(reposicion, "STOCK_EXTRA_PORTAL", 0), \
              patch.object(reposicion.stock, "minimo", return_value=minimo), \
              patch.object(reposicion.stock, "comprometido", side_effect=comprometido.get), \
              patch.object(reposicion.custodia, "stock_disponible", side_effect=stock.get), \
