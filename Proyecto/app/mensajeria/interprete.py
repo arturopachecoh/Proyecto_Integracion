@@ -149,6 +149,19 @@ def revisar_suelto(texto: str, salida: dict) -> dict:
     return salida
 
 
+_PLAZO_PASADO = re.compile(r"\bya deberian? haber llegado\b")
+
+
+def revisar_plazo_pasado(texto: str, salida: dict) -> dict:
+    """"para las 07:45 hrs. Ya deberia haber llegado" escrito a las 13:00: el
+    modelo lo pasa a las 19:45, pero el plazo ya paso y se descarta."""
+    if not isinstance(salida, dict) or salida.get("es_pedido") is not True:
+        return salida
+    if _PLAZO_PASADO.search(_normalizar(texto)):
+        return {**salida, "es_pedido": False, "motivo": "plazo ya paso"}
+    return salida
+
+
 def desempatar(texto: str, salida: dict, catalogo: dict) -> dict:
     """Si el modelo dio varios candidatos y el texto nombra un termino que tiene
     uno solo de ellos ("aspirina"), deja ese. Solo achica la lista: un termino
