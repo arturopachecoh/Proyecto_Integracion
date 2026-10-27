@@ -6,10 +6,13 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from app import catalogo, salud, trazabilidad, ventas
 from app import catalogo, custodia, trazabilidad, ventas
 from app.config import FARMA_ENV, PUBLIC_BASE_URL
 from app.db import db_ok
 from app.integrations.checkout import resultado_mock
+from app.mensajeria.webhook import router as mensajeria_router
+from app.retiros import webhook as retiros_webhook
 
 app = FastAPI(title="Distribuidora 4")
 app.add_middleware(
@@ -18,6 +21,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Webhooks de mensajeria y retiros, y API de /recalls (antes de la ruta catch-all del portal)
+app.include_router(mensajeria_router)
+app.include_router(retiros_webhook.router)
 
 WEB_DIST = Path(__file__).resolve().parent.parent / "web" / "dist"
 
@@ -52,6 +59,11 @@ def _spa_index() -> str | None:
 @app.get("/health")
 def health():
     return {"status": "ok", "env": FARMA_ENV, "db": db_ok()}
+
+
+@app.get("/api/salud/pedidos")
+def api_salud_pedidos():
+    return salud.resumen()
 
 
 @app.get("/api/catalogo")

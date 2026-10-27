@@ -113,6 +113,29 @@ def move_product(product_id: str, store_id: str):
                    json={"store": store_id})
 
 
+def dispatch(product_id: str, order_id: str):
+    """Entrega una unidad que esta en checkOut a la OC indicada."""
+    return request("POST", "/farma-central/dispatch",
+                   json={"productId": product_id, "orderId": order_id})
+
+
+# --- Retiros de lote ---
+
+def recalls_activos():
+    """Retiros activos del grupo (respaldo del webhook /api/recalls)."""
+    return request("GET", "/farma-central/recalls")
+
+
+def notificar_retiro(recall_id: str, cuerpo: dict):
+    """Una notificacion por OC afectada: {orderId, customerName, productIds, message}."""
+    return request("POST", f"/farma-central/recalls/{recall_id}/notifications", json=cuerpo)
+
+
+def reportar_retiro(recall_id: str, cuerpo: dict):
+    """Resultado de la investigacion. Reemplazable: vale el ultimo dentro del plazo."""
+    return request("POST", f"/farma-central/recalls/{recall_id}/report", json=cuerpo)
+
+
 # --- Solo en dev ---
 
 def sandbox_product(sku: str):

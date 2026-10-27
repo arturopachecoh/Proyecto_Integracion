@@ -7,6 +7,7 @@ import Checkout from "./pages/Checkout";
 import Trazabilidad from "./pages/Trazabilidad";
 import Pedidos from "./pages/Pedidos";
 import Pago from "./pages/Pago";
+import { RetiroDetallePage, Retiros } from "./pages/Retiros";
 import { leerCarrito } from "./cart";
 
 export default function App() {
@@ -41,6 +42,8 @@ export default function App() {
           <Route path="/trazabilidad" element={<Trazabilidad />} />
           <Route path="/pedidos" element={<Pedidos />} />
           <Route path="/pago/:estado" element={<Pago />} />
+          <Route path="/recalls" element={<Retiros />} />
+          <Route path="/recalls/:id" element={<RetiroDetallePage />} />
         </Routes>
       </main>
     </>

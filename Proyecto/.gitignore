@@ -1,6 +1,9 @@
 # Credenciales: nunca al repo (usar .env.example como plantilla)
 .env
 
+# Llaves de Pub/Sub y known_hosts del sFTP: nunca al repo
+keys/
+
 # Python
 __pycache__/
 *.py[cod]

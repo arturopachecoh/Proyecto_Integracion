@@ -35,12 +35,16 @@ ESPERA = 20                 # segundos entre vueltas
 LOCK_PRODUCCION = 4_000_002
 
 
+class ProduccionOcupada(RuntimeError):
+    """Otro proceso tiene el candado de produccion."""
+
+
 @contextmanager
 def _candado():
     """Dos orquestadores a la vez comprarian dos veces lo mismo."""
     with engine.connect() as conn:
         if not conn.execute(text("SELECT pg_try_advisory_lock(:k)"), {"k": LOCK_PRODUCCION}).scalar():
-            raise RuntimeError("Ya hay otro proceso de produccion corriendo")
+            raise ProduccionOcupada("Ya hay otro proceso de produccion corriendo")
         try:
             yield
         finally:
@@ -181,6 +185,79 @@ def _intentar_fabricar(sku: str, maximo: int) -> int:
         return 0
 
 
+def una_vuelta(objetivos: dict[str, int], tanda: int = 10,
+               estado: dict | None = None) -> dict[str, int]:
+    """Una vuelta del orquestador. objetivos = {kit: cuantos faltan pedir}.
+    Hay que llamarla con el candado tomado. Devuelve cuantos kits se pidieron
+    en esta vuelta. `estado` guarda entre vueltas el contador del rompe-atascos."""
+    estado = estado if estado is not None else {}
+    kits = set(objetivos)
+    activos = [k for k, n in objetivos.items() if n > 0]  # lista: mantiene el orden
+    pedidos: dict[str, int] = defaultdict(int)
+
+    _despejar(kits)
+    _liberar_buffer()
+
+    fabricados = 0
+
+    # 1. Kits: armar todo lo que alcance
+    for kit in activos:
+        n = _intentar_fabricar(kit, objetivos[kit])
+        pedidos[kit] += n
+        fabricados += n
+
+    # 2. Planificar la tanda actual con lo que queda
+    en_tanda = {k: min(tanda, objetivos[k] - pedidos[k])
+                for k in activos if objetivos[k] > pedidos[k]}
+    plan = planificar(en_tanda)
+
+    # 3. Intermedios (primero los de nivel mas alto)
+    sin_espacio = False
+    for sku in sorted(plan, key=_profundidad, reverse=True):
+        if sku in kits or not catalogo()[sku]["components"]:
+            continue
+        n = _intentar_fabricar(sku, plan[sku])
+        fabricados += n
+        if n == 0 and _cuantos_caben(sku, plan[sku]) == 0:
+            sin_espacio = True
+
+    # Si acondicionamiento esta lleno de intermedios esperando, se sacan a bodega
+    if sin_espacio and not any(_cuantos_alcanzan(k, 1) for k in activos):
+        intermedios = {s for s in catalogo() if catalogo()[s]["components"] and s not in kits}
+        _despejar(intermedios)
+
+    # Rompe-atascos: si acondicionamiento esta lleno y nada avanza hace varias
+    # vueltas (y no hay nada en camino), se vacia completo y se reintenta
+    sin_avance = 0 if fabricados else estado.get("sin_avance", 0) + 1
+    if sin_espacio and sin_avance >= 6 and custodia.fabricaciones_en_camino() == 0:
+        log.warning("Acondicionamiento atascado; lo vacio a la bodega")
+        _vaciar_acondicionamiento()
+        sin_avance = 0
+    estado["sin_avance"] = sin_avance
+
+    # 4. Insumos: comprar lo que falta y no viene en camino
+    for sku, cantidad in plan.items():
+        if not catalogo()[sku]["components"]:
+            try:
+                comprar(sku, cantidad)
+            except Exception:
+                log.exception("Fallo comprando %d x %s", cantidad, sku)
+
+    return dict(pedidos)
+
+
+def intentar_vuelta(objetivos: dict[str, int], estado: dict) -> dict[str, int] | None:
+    """Para el reponedor: una vuelta si nadie mas esta produciendo.
+    Devuelve None si el candado esta tomado (p. ej. un producir() manual)."""
+    # Solo _candado levanta ProduccionOcupada: un error dentro de la vuelta
+    # (p. ej. un PoW que falla) sale como su propia excepcion
+    try:
+        with _candado():
+            return una_vuelta(objetivos, estado=estado)
+    except ProduccionOcupada:
+        return None
+
+
 def producir(objetivos: dict[str, int], tanda: int = 10, max_horas: float = 12) -> dict[str, int]:
     """Fabrica objetivos = {kit: cantidad}. Devuelve cuantos se pidieron de cada kit."""
     for kit, n in objetivos.items():
@@ -191,10 +268,10 @@ def producir(objetivos: dict[str, int], tanda: int = 10, max_horas: float = 12) 
 
     kits = set(objetivos)
     pedidos = defaultdict(int)
-    sin_avance = 0
     limite = time.time() + max_horas * 3600
 
     with _candado():
+        estado: dict = {}
         while True:
             restantes = {k: n - pedidos[k] for k, n in objetivos.items() if n > pedidos[k]}
             if not restantes:
@@ -203,52 +280,11 @@ def producir(objetivos: dict[str, int], tanda: int = 10, max_horas: float = 12) 
                 log.error("Se alcanzo el limite de %s horas; quedan %s", max_horas, restantes)
                 break
 
-            _despejar(kits)
-            _liberar_buffer()
-
-            fabricados = 0
-
-            # 1. Kits: armar todo lo que alcance
-            for kit, r in restantes.items():
-                n = _intentar_fabricar(kit, r)
+            # Se pasan todos los kits (con 0 los ya completos) para que una_vuelta
+            # siga despejando y excluyendo de intermedios a todos los objetivos
+            metas = {k: max(0, n - pedidos[k]) for k, n in objetivos.items()}
+            for kit, n in una_vuelta(metas, tanda, estado).items():
                 pedidos[kit] += n
-                fabricados += n
-
-            # 2. Planificar la tanda actual con lo que queda
-            en_tanda = {k: min(tanda, objetivos[k] - pedidos[k])
-                        for k in objetivos if objetivos[k] > pedidos[k]}
-            plan = planificar(en_tanda)
-
-            # 3. Intermedios (primero los de nivel mas alto)
-            sin_espacio = False
-            for sku in sorted(plan, key=_profundidad, reverse=True):
-                if sku in kits or not catalogo()[sku]["components"]:
-                    continue
-                n = _intentar_fabricar(sku, plan[sku])
-                fabricados += n
-                if n == 0 and _cuantos_caben(sku, plan[sku]) == 0:
-                    sin_espacio = True
-
-            # Si acondicionamiento esta lleno de intermedios esperando, se sacan a bodega
-            if sin_espacio and not any(_cuantos_alcanzan(k, 1) for k in restantes):
-                intermedios = {s for s in catalogo() if catalogo()[s]["components"] and s not in kits}
-                _despejar(intermedios)
-
-            # Rompe-atascos: si acondicionamiento esta lleno y nada avanza hace varias
-            # vueltas (y no hay nada en camino), se vacia completo y se reintenta
-            sin_avance = 0 if fabricados else sin_avance + 1
-            if sin_espacio and sin_avance >= 6 and custodia.fabricaciones_en_camino() == 0:
-                log.warning("Acondicionamiento atascado; lo vacio a la bodega")
-                _vaciar_acondicionamiento()
-                sin_avance = 0
-
-            # 4. Insumos: comprar lo que falta y no viene en camino
-            for sku, cantidad in plan.items():
-                if not catalogo()[sku]["components"]:
-                    try:
-                        comprar(sku, cantidad)
-                    except Exception:
-                        log.exception("Fallo comprando %d x %s", cantidad, sku)
 
             avance = ", ".join(f"{k} {pedidos[k]}/{n}" for k, n in objetivos.items())
             log.info("Avance: %s", avance)
