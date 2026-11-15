@@ -26,6 +26,7 @@ from sqlalchemy import text
 from app import custodia
 from app import espacios as esp
 from app.db import engine
+from app.mercado.escasez import InsumoNoDisponible
 from app.operaciones import (FaltanInsumos, SinEspacio, catalogo, comprar, es_frio, fabricar, mover,
                              receta, tamano_lote)
 
@@ -240,6 +241,9 @@ def una_vuelta(objetivos: dict[str, int], tanda: int = 10,
         if not catalogo()[sku]["components"]:
             try:
                 comprar(sku, cantidad)
+            except InsumoNoDisponible as e:
+                # Esperable en la E3: el reponedor sigue y el worker de mercado lo compra.
+                log.info("%s", e)
             except Exception:
                 log.exception("Fallo comprando %d x %s", cantidad, sku)
 
