@@ -36,7 +36,7 @@ class TradesClientTest(unittest.TestCase):
         trades_client._token_exp = 0
 
     def _auth(self, *a, **k):
-        return _resp(200, "POST", f"{BASE}/trades/auth", {"token": _jwt(time.time() + 3600)})
+        return _resp(200, "POST", f"{BASE}/trades/autenticar", {"token": _jwt(time.time() + 3600)})
 
     def test_401_renueva_el_token_una_vez(self):
         url = f"{BASE}/trades/offers"
@@ -50,7 +50,7 @@ class TradesClientTest(unittest.TestCase):
         url = f"{BASE}/trades/offers/abc"
         respuestas = [
             _resp(429, "GET", url, headers={"Ratelimit-Reset": "2"}),
-            _resp(200, "GET", url, {"id": "abc", "status": "open"}),
+            _resp(200, "GET", url, {"id": "abc", "state": "open"}),
         ]
         with patch("httpx.post", side_effect=self._auth), \
              patch("httpx.request", side_effect=respuestas), \
@@ -74,19 +74,22 @@ class TradesClientTest(unittest.TestCase):
             with self.assertRaises(httpx.HTTPStatusError):
                 trades_client.publicar("sell", "EXC-LACTOSA-DC", 10, 6)
 
-    def test_normaliza_nombres_distintos(self):
+    def test_normaliza_la_forma_real_de_la_api(self):
+        # Forma de GET /trades/offers/{id} en dev (15/11)
         oferta = trades_client.normalizar(
-            {"offerId": "abc", "side": "sell", "sku": "EXC-LACTOSA-DC",
-             "quantity": "10", "unitPrice": 6, "status": "open", "sellerGroup": "2",
+            {"id": "abc", "publisher": "2", "counterparty": "4", "side": "sell",
+             "sku": "EXC-LACTOSA-DC", "quantity": 10, "unitPrice": 6, "state": "closed",
              "orderId": "oc-1"}
         )
         self.assertEqual(oferta["id"], "abc")
         self.assertEqual(oferta["quantity"], 10)
         self.assertEqual(oferta["unitPrice"], 6)
         self.assertEqual(oferta["group"], 2)
+        self.assertEqual(oferta["counterparty"], 4)
         self.assertEqual(oferta["orderId"], "oc-1")
+        self.assertEqual(trades_client.estado_local(oferta["status"]), "cerrada")
         self.assertEqual(trades_client.estado_local("open"), "abierta")
-        self.assertEqual(trades_client.estado_local("accepted"), "cerrada")
+        self.assertEqual(trades_client.estado_local("expired"), "expirada")
 
 
 if __name__ == "__main__":

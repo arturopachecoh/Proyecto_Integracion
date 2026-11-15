@@ -17,6 +17,10 @@ from app import trades_client
 
 log = logging.getLogger("mercado")
 
+# No se acepta una venta ajena sobre 1,2x el precio vigente (el bot 998 vende a ~1,4x):
+# si no hay nada mas barato, se publica una compra a 1,0x y se espera.
+TOPE_COMPRA = 1.2
+
 
 def tick(ahora: datetime | None = None) -> dict:
     ahora = ahora or datetime.now(timezone.utc)
@@ -83,6 +87,7 @@ def _comprar(sku: str, ahora: datetime, gastar, stats: dict) -> bool:
         and not registro.existe(o.get("id") or "")
         and 0 < int(o.get("quantity") or 0) <= config.MERCADO_MAX_ACEPTAR
         and precio.dentro_de_banda(int(o.get("unitPrice") or 0), vigente)
+        and int(o.get("unitPrice") or 0) <= vigente * TOPE_COMPRA
     ]
     if ofertas:
         mejor = min(ofertas, key=lambda o: int(o["unitPrice"]))

@@ -27,7 +27,7 @@ class PrecioTest(unittest.TestCase):
         self.assertFalse(precio.dentro_de_banda(16, 10))
         self.assertEqual(precio.siguiente_precio_venta(10, 0), 10)
         self.assertEqual(precio.siguiente_precio_venta(10, 5), 5)
-        self.assertEqual(precio.precio_compra(10), 5)
+        self.assertEqual(precio.precio_compra(10), 10)  # compra a 1,0x
 
     def test_el_portal_no_importa_el_mercado(self):
         from pathlib import Path
