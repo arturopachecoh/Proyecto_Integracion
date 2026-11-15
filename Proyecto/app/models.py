@@ -194,7 +194,8 @@ class OrdenCompra(Base):
     __tablename__ = "ordenes_compra"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    canal: Mapped[str] = mapped_column(_enum("sftp", "pubsub", "mensajeria", name="canal_oc"))
+    canal: Mapped[str] = mapped_column(
+        _enum("sftp", "pubsub", "mensajeria", "mercado", name="canal_oc"))
     origen_ref: Mapped[str | None] = mapped_column(String(255))  # archivo o id del mensaje
     sku: Mapped[str | None] = mapped_column(String(50), index=True)
     cantidad: Mapped[int | None] = mapped_column(Integer)
