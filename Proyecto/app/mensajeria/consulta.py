@@ -14,9 +14,12 @@ from app.models import Mensaje, OrdenCompra
 from app.operaciones import catalogo
 
 
-def elegir_oc(telefono: str | None, texto: str, candidatos: list | None) -> str | None:
+def elegir_oc(telefono: str | None, nombre: str | None, texto: str,
+              candidatos: list | None) -> str | None:
     """La OC del cliente por la que pregunta: la que cita por id; si no, la mas
-    reciente del kit que nombra; si no, la mas reciente. None si no tiene pedidos."""
+    reciente del kit que nombra; si no, la mas reciente. None si no tiene pedidos.
+    El cliente se busca por telefono (pedidos por mensajeria) y, si no aparece,
+    por nombre (el cliente de cualquier OC nuestra)."""
     citada = re.findall(r"\b[0-9a-f]{24}\b", texto.lower())
     if citada:
         return citada[0]
@@ -27,6 +30,12 @@ def elegir_oc(telefono: str | None, texto: str, candidatos: list | None) -> str 
             .where(Mensaje.telefono == telefono, Mensaje.oc_id.is_not(None))
             .order_by(Mensaje.recibido_en.desc())
         ).all()
+        if not filas and nombre:
+            filas = s.execute(
+                select(OrdenCompra.id, OrdenCompra.sku)
+                .where(OrdenCompra.cliente == nombre)
+                .order_by(OrdenCompra.recibida_en.desc())
+            ).all()
     kits = {str(c).strip().upper() for c in candidatos or []}
     del_kit = [oc for oc, sku in filas if sku in kits]
     todas = [oc for oc, _ in filas]

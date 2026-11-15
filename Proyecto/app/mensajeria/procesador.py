@@ -166,7 +166,7 @@ def _decidir(message_id: str) -> None:
 
 def _preparar_consulta(m, salida: dict, crudo: str) -> None:
     """El cliente pregunta por un pedido anterior: se responde inquiry con su OC."""
-    oc = consulta.elegir_oc(m.telefono, m.texto, salida.get("candidatos"))
+    oc = consulta.elegir_oc(m.telefono, m.remitente, m.texto, salida.get("candidatos"))
     if oc:
         cuerpo = {"status": "inquiry", "orderId": oc}
     else:
