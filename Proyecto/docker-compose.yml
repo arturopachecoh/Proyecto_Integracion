@@ -65,6 +65,27 @@ services:
         condition: service_healthy
     mem_limit: 128m
 
+  facturacion:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "worker.facturacion"]   # proceso propio: el SOAP puede tardar
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 96m
+
+  mercado:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "worker.mercado"]   # una sola replica: el candado evita ticks dobles
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    cpus: "1.0"                           # compra a Farma para revender (PoW), igual que el reponedor
+    mem_limit: 128m
+
   reponedor:
     build: .
     restart: unless-stopped

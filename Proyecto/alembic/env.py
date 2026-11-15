@@ -5,6 +5,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.models import Base  # importa todos los modelos
+import app.mercado.modelos  # noqa: F401  registra ofertas_mercado en target_metadata
 
 config = context.config
 # La URL de la base sale del .env, no de alembic.ini (asi no queda la clave en el repo)

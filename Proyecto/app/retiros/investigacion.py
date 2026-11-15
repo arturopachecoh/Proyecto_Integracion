@@ -51,7 +51,7 @@ def investigar(codigo: str) -> dict:
     with SessionLocal() as s:
         lote = _lote(s, codigo)
         if lote is None:
-            log.error("Retiro del lote %s: el lote no esta en custodia", codigo)
+            log.info("Retiro del lote %s: el lote no paso por esta distribuidora", codigo)
             return _vacia()
         raiz_id, raiz_codigo = lote.id, lote.codigo
 

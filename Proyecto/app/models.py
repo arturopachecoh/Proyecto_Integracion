@@ -194,7 +194,8 @@ class OrdenCompra(Base):
     __tablename__ = "ordenes_compra"
 
     id: Mapped[str] = mapped_column(String(40), primary_key=True)
-    canal: Mapped[str] = mapped_column(_enum("sftp", "pubsub", "mensajeria", name="canal_oc"))
+    canal: Mapped[str] = mapped_column(
+        _enum("sftp", "pubsub", "mensajeria", "mercado", name="canal_oc"))
     origen_ref: Mapped[str | None] = mapped_column(String(255))  # archivo o id del mensaje
     sku: Mapped[str | None] = mapped_column(String(50), index=True)
     cantidad: Mapped[int | None] = mapped_column(Integer)
@@ -207,6 +208,8 @@ class OrdenCompra(Base):
     decision: Mapped[dict | None] = mapped_column(JSON)  # numeros vistos y motivo
     intentos: Mapped[int] = mapped_column(Integer, default=0)
     ultimo_error: Mapped[str | None] = mapped_column(Text)
+    factura_id: Mapped[str | None] = mapped_column(String(40))     # NULL = falta facturar
+    factura_error: Mapped[str | None] = mapped_column(Text)        # ultimo error al facturar
     recibida_en: Mapped[datetime] = mapped_column(Fecha, server_default=func.now())
     decidida_en: Mapped[datetime | None] = mapped_column(Fecha)
     actualizada_en: Mapped[datetime] = mapped_column(
@@ -249,7 +252,7 @@ class Mensaje(Base):
     texto: Mapped[str] = mapped_column(Text, default="")
     recibido_en: Mapped[datetime] = mapped_column(Fecha)  # receivedAt del mensaje
     estado: Mapped[str] = mapped_column(
-        _enum("pendiente", "respondiendo", "pedido", "descartado", "sin_respuesta",
+        _enum("pendiente", "respondiendo", "pedido", "descartado", "consulta", "sin_respuesta",
               name="estado_mensaje"),
         default="pendiente",
     )
