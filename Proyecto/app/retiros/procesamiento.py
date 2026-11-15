@@ -193,7 +193,8 @@ def _investigar_reportar_notificar(r) -> bool:
                 registro.registrar_error(r.id, f"reporte: {_error(e)}")
                 al_dia = False
 
-    registro.anotar_notificaciones(r.id, [_notificacion(r, e) for e in inv["entregas"]])
+    registro.anotar_notificaciones(
+        r.id, [_notificacion(r, e) for e in _notificables(inv["entregas"])])
     for oc_id, cuerpo_notif in registro.notificaciones_pendientes(r.id):
         clave = (r.id, "notificacion", oc_id)
         if not _toca(clave):
@@ -250,6 +251,12 @@ def _notificacion(r, entrega: dict) -> dict:
     return {**entrega,
             "message": (f"Retiro de lote {r.lote}: las unidades indicadas no deben usarse "
                         f"ni distribuirse.{motivo}")}
+
+
+def _notificables(entregas: list[dict]) -> list[dict]:
+    """Las ventas de mercado van en el reporte y no se notifican."""
+    from app.mercado.orden import canal_de, es_notificable
+    return [e for e in entregas if es_notificable(canal_de(e.get("orderId") or ""))]
 
 
 # ---------------------------------------------------------------------------

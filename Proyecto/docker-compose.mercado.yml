@@ -1,0 +1,13 @@
+# Servicio del mercado (Entrega 3, desarrollador 1).
+# No edita docker-compose.yml. Desde Proyecto/:
+#   docker compose -f docker-compose.yml -f docker-compose.mercado.yml up -d mercado
+services:
+  mercado:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "worker.mercado"]
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+    mem_limit: 128m

@@ -115,9 +115,13 @@ def devolver_desde_checkout(maximo: int = MAX_DESPACHOS_POR_TICK) -> int:
     """Unidades en stock que quedaron en checkOut sin salir (su OC se cerro o
     se libero): checkOut no es un espacio vendible, asi que vuelven a cold (o
     buffer si cold esta lleno) si requieren frio, o a bodega si no. Las
-    reservadas no se tocan. Un error deja la unidad para el proximo tick."""
+    reservadas no se tocan. Tampoco las que una oferta de venta tiene apartadas.
+    Un error deja la unidad para el proximo tick."""
     devueltas = 0
+    bloqueadas = custodia.ids_en_oferta_abierta()
     for u in custodia.unidades_en("checkOut")[:maximo]:
+        if u.id in bloqueadas:
+            continue
         try:
             if es_frio(u.sku):
                 destino = "cold" if esp.libres("cold") > 0 else "buffer"

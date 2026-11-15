@@ -124,6 +124,12 @@ def _candado_fabricacion():
 def comprar(sku: str, cantidad: int) -> int:
     """Compra un insumo a Farma Central y lo registra en custodia.
     Devuelve el id de la solicitud registrada."""
+    from app import config
+    from app.mercado.escasez import InsumoNoDisponible, puede_comprar_en_farma
+
+    if not puede_comprar_en_farma(sku, config.FARMA_GROUP):
+        raise InsumoNoDisponible(sku)
+
     _validar_cantidad(sku, cantidad)
     if catalogo()[sku]["components"]:
         raise ValueError(f"{sku} no es un insumo: se fabrica, no se compra")
