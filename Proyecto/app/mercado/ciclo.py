@@ -11,6 +11,7 @@ import math
 from datetime import datetime, timedelta, timezone
 
 from app import config, custodia, operaciones
+from app import espacios as esp
 from app.mercado import acciones, escasez, precio, registro
 from app import trades_client
 
@@ -111,6 +112,11 @@ def _vender(sku: str, gastar, stats: dict) -> None:
         and 0 < int(o.get("quantity") or 0) <= custodia.stock_disponible(sku)
         and (o.get("unitPrice") or 0) >= minimo
     ]
+    if compras:
+        # Despacho tiene poca capacidad (25 en dev): las unidades tienen que caber
+        # y siempre quedan 5 lugares para despachar las OC de los clientes
+        cupo = esp.libres("checkOut") - 5
+        compras = [o for o in compras if int(o["quantity"]) <= cupo]
     if compras and gastar():
         mejor = max(compras, key=lambda o: int(o["unitPrice"]))
         if acciones.aceptar_compra_ajena(mejor):
@@ -123,7 +129,7 @@ def _vender(sku: str, gastar, stats: dict) -> None:
     # 3. Publicar una venta chica, una abierta por SKU
     if registro.hay_abierta(sku, "sell") or not gastar():
         return
-    if _excedente(sku) < config.MERCADO_LOTE:
+    if _excedente(sku) < config.MERCADO_LOTE or esp.libres("checkOut") - 5 < config.MERCADO_LOTE:
         return
     vigente = precio.vigente(sku)
     if not vigente:
