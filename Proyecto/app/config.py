@@ -64,3 +64,12 @@ MESSAGING_SECRET = os.getenv("MESSAGING_SECRET") or FARMA_API_KEY
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "").rstrip("/")
 LLM_API_KEY = os.getenv("LLM_API_KEY", "")
 LLM_MODEL = os.getenv("LLM_MODEL", "")
+
+# Mercado entre distribuidoras (Entrega 3). Ver docs/e3/d1/.
+TRADES_BASE_URL = (os.getenv("TRADES_BASE_URL") or FARMA_BASE_URL).rstrip("/")
+TRADES_AUTH_PATH = os.getenv("TRADES_AUTH_PATH", "/trades/auth")
+TRADES_TOKEN_MODE = os.getenv("TRADES_TOKEN_MODE", "propio")  # propio | farma
+MERCADO_LOTE = int(os.getenv("MERCADO_LOTE", "10"))
+MERCADO_ESPERA_MIN = int(os.getenv("MERCADO_ESPERA_MIN", "30"))
+MERCADO_TICK_SECONDS = int(os.getenv("MERCADO_TICK_SECONDS", "60"))
+MERCADO_MAX_REQUESTS = int(os.getenv("MERCADO_MAX_REQUESTS", "20"))
