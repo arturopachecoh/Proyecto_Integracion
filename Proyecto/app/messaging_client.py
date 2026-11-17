@@ -62,6 +62,14 @@ def _request(method: str, path: str, timeout: float = 15, **kwargs) -> httpx.Res
     return r
 
 
+def enviar(telefono: str, reply_to: str, texto: str) -> int:
+    """POST /messaging/messages: le escribe al cliente (estilo WhatsApp).
+    Devuelve el codigo HTTP: 201 enviado, 410 fuera de plazo, 422 telefono o texto invalido."""
+    r = _request("POST", "/messaging/messages",
+                 json={"to": telefono, "replyTo": reply_to, "text": texto[:500]})
+    return r.status_code
+
+
 def responder(message_id: str, cuerpo: dict) -> tuple[int, dict | None]:
     """POST /messaging/messages/{id}/response. Devuelve (codigo HTTP, cuerpo JSON).
     Levanta httpx.HTTPError solo si no hubo respuesta (red, timeout)."""

@@ -3,7 +3,7 @@
 Estados (tabla mensajes):
   pendiente     -> recibido, falta decidir (o el modelo fallo y se reintenta)
   respondiendo  -> decision y cuerpo anotados, falta que la plataforma confirme
-  pedido / descartado / sin_respuesta -> finales
+  pedido / descartado / consulta / sin_respuesta -> finales
 
 La decision se anota ANTES de llamar a la plataforma. Si el proceso cae entre
 la anotacion y la respuesta, el mensaje queda en respondiendo y se reenvia el
@@ -21,7 +21,7 @@ from sqlalchemy import text
 
 from app import config, messaging_client, salud
 from app.db import engine
-from app.mensajeria import interprete, registro, validacion
+from app.mensajeria import consulta, interprete, registro, validacion
 from app.operaciones import catalogo
 from app.pedidos import bandeja
 
@@ -147,6 +147,8 @@ def _decidir(message_id: str) -> None:
         return
 
     _salud_modelo(None)
+    if isinstance(salida, dict) and salida.get("consulta") is True:
+        return _preparar_consulta(m, salida, crudo)
     salida = interprete.revisar_cantidad(m.texto, interprete.desempatar(m.texto, salida, cat))
     salida = interprete.revisar_plazo_pasado(m.texto, interprete.revisar_suelto(m.texto, salida))
     resultado = validacion.validar(salida, validacion.skus_kit(cat), m.recibido_en, _ahora())
@@ -160,6 +162,24 @@ def _decidir(message_id: str) -> None:
         respuesta=resultado.cuerpo,
     )
     _enviar(message_id)
+
+
+def _preparar_consulta(m, salida: dict, crudo: str) -> None:
+    """El cliente pregunta por un pedido anterior: se responde inquiry con su OC."""
+    oc = consulta.elegir_oc(m.telefono, m.remitente, m.texto, salida.get("candidatos"))
+    if oc:
+        cuerpo = {"status": "inquiry", "orderId": oc}
+    else:
+        cuerpo = {"status": "discarded", "reason": "Consulta sin un pedido anterior de este cliente"}
+    log.info("Mensaje %s: consulta de estado -> OC %s", m.id, oc)
+    registro.preparar_respuesta(
+        m.id,
+        interpretacion={"modelo": config.LLM_MODEL, "crudo": crudo, "salida": salida},
+        decision={"resultado": cuerpo["status"], "motivo": "consulta de estado",
+                  "pasos": [f"OC elegida: {oc}"], "decidido_en": _ahora().isoformat()},
+        respuesta=cuerpo,
+    )
+    _enviar(m.id)
 
 
 def _preparar_descarte_por_plazo(m) -> None:
@@ -204,6 +224,8 @@ def _enviar(message_id: str, rehecho: bool = False) -> None:
     if cuerpo.get("test") or m.id.startswith("test_"):
         evento["test"] = True
     es_pedido = enviado.get("status") == "order"
+    if enviado.get("status") == "inquiry" and codigo in (200, 404, 409):
+        return _contestar_consulta(m, enviado, codigo, evento)
 
     if codigo == 200:
         if not es_pedido:
@@ -237,6 +259,28 @@ def _enviar(message_id: str, rehecho: bool = False) -> None:
         _rechazo_422(m, enviado, cuerpo, evento, rehecho)
     else:
         registro.registrar_fallo(m.id, f"responder: HTTP {codigo} {str(cuerpo)[:300]}", evento)
+
+
+def _contestar_consulta(m, enviado: dict, codigo: int, evento: dict) -> None:
+    """La consulta quedo registrada (200, o 409 si ya estaba): falta escribirle al
+    cliente. Si falla, el mensaje sigue en respondiendo y el proximo tick reintenta
+    (/response dara 409 y se vuelve a escribir)."""
+    if codigo == 404:  # la OC no existe o no es nuestra: se descarta
+        registro.reemplazar_respuesta(
+            m.id, {"status": "discarded", "reason": "No encontramos el pedido por el que pregunta"},
+            {**evento, "paso": "consulta_404_se_descarta"})
+        return _enviar(m.id, rehecho=True)
+    texto = consulta.texto_estado(enviado["orderId"], m.remitente)
+    codigo_texto = messaging_client.enviar(m.telefono, m.id, texto)
+    evento = {**evento, "paso": "consulta_contestada", "texto": texto, "codigo_texto": codigo_texto}
+    if codigo_texto == 201:
+        registro.cerrar(m.id, "consulta", evento)
+        log.info("Mensaje %s: consulta contestada: %s", m.id, texto)
+    elif codigo_texto in (410, 422, 429):  # no tiene arreglo reintentando
+        registro.cerrar(m.id, "consulta", evento, error=f"no se pudo escribir al cliente: HTTP {codigo_texto}")
+        log.error("Mensaje %s: no se pudo escribir al cliente (HTTP %s)", m.id, codigo_texto)
+    else:
+        registro.registrar_fallo(m.id, f"escribir al cliente: HTTP {codigo_texto}", evento)
 
 
 def _rechazo_422(m, enviado: dict, cuerpo: dict, evento: dict, rehecho: bool) -> None:

@@ -100,7 +100,7 @@ def anotar_oc(message_id: str, oc_id: str, evento: dict) -> None:
 
 
 def cerrar(message_id: str, estado: str, evento: dict, error: str | None = None) -> None:
-    """Estado final: pedido, descartado o sin_respuesta."""
+    """Estado final: pedido, descartado, consulta o sin_respuesta."""
     with SessionLocal.begin() as s:
         m = s.get(Mensaje, message_id)
         if m is None:

@@ -9,6 +9,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, or_, select
+from sqlalchemy.exc import ProgrammingError
 
 from app.db import SessionLocal
 from sqlalchemy import func as sqlfunc
@@ -159,6 +160,7 @@ def _crear_lote(s, codigo: str, sku: str, unidades: list[dict]) -> Lote | None:
                     vence_en=_fecha(unidades[0].get("expiresAt")), origen="farma_central")
         s.add(lote)
         s.flush()
+        _aplicar_origen_mercado(s, lote, codigo, unidades)
         return lote
 
     lote = Lote(codigo=codigo, sku=sku, cantidad_inicial=sol.cantidad,
@@ -171,6 +173,26 @@ def _crear_lote(s, codigo: str, sku: str, unidades: list[dict]) -> Lote | None:
     if sol.tipo == "fabricacion":
         _materializar_relaciones(s, sol.id, lote.id)
     return lote
+
+
+def _aplicar_origen_mercado(s, lote: Lote, codigo: str, unidades: list[dict]) -> None:
+    """Si la llegada cubre una compra de mercado, el lote queda de otra distribuidora.
+
+    Un error de tabla inexistente no aborta la recepcion: sin la migracion E3
+    la llegada sigue siendo de Farma, como hasta ahora.
+    """
+    try:
+        with s.begin_nested():
+            from app.mercado.llegadas import atributos_compra
+            extra = atributos_compra(s, lote.sku, codigo, unidades)
+    except ProgrammingError:
+        log.warning("Tablas de mercado sin migrar; lote %s queda como Farma", codigo)
+        return
+    if not extra:
+        return
+    lote.origen = "distribuidora"
+    lote.origen_grupo = extra.get("origen_grupo")
+    lote.lote_proveedor = extra.get("lote_proveedor") or codigo
 
 
 def _materializar_relaciones(s, solicitud_id: int, child_lote_id: int) -> None:
@@ -474,18 +496,32 @@ def espacio_de(unidad_id: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 ESPACIOS_USABLES = ("packaging", "checkIn", "bodega", "cold", "buffer")
+_ESTADOS_OFERTA_VIVA = ("publicando", "abierta", "aceptando", "cancelando")
+
+
+def _sin_oferta_abierta():
+    """Unidades que una oferta de venta todavia tiene apartadas."""
+    from app.mercado.modelos import OfertaMercado, OfertaUnidad
+
+    return ~Unidad.id.in_(
+        select(OfertaUnidad.unidad_id)
+        .join(OfertaMercado, OfertaMercado.id == OfertaUnidad.oferta_id)
+        .where(OfertaMercado.estado.in_(_ESTADOS_OFERTA_VIVA))
+    )
 
 
 def unidades_disponibles(sku: str, margen: timedelta = timedelta(hours=1)) -> list[Unidad]:
     """Unidades en stock de un SKU que se pueden usar para fabricar.
     Primero las que ya estan en acondicionamiento (no hay que moverlas),
-    despues por vencimiento: las que vencen antes se usan primero (FEFO)."""
+    despues por vencimiento: las que vencen antes se usan primero (FEFO).
+    Las apartadas por una oferta de venta abierta no salen."""
     with SessionLocal() as s:
         return list(s.scalars(
             select(Unidad)
             .where(Unidad.sku == sku, Unidad.estado == "en_stock",
                    Unidad.espacio_actual.in_(ESPACIOS_USABLES),
-                   (Unidad.vence_en.is_(None)) | (Unidad.vence_en > _ahora() + margen))
+                   (Unidad.vence_en.is_(None)) | (Unidad.vence_en > _ahora() + margen),
+                   _sin_oferta_abierta())
             .order_by((Unidad.espacio_actual != "packaging"), Unidad.vence_en.asc().nulls_last())
         ))
 
@@ -546,6 +582,7 @@ def stock_disponible(sku: str, margen: timedelta = timedelta(hours=1)) -> int:
                 Unidad.estado == "en_stock",
                 Unidad.espacio_actual.in_(ESPACIOS_USABLES),
                 (Unidad.vence_en.is_(None)) | (Unidad.vence_en > _ahora() + margen),
+                _sin_oferta_abierta(),
             )
         ) or 0
 
@@ -581,9 +618,34 @@ def retirar_de_circulacion(unidad_ids: list[str]) -> list[tuple[str, int]]:
                 s.delete(vu)
             u.estado = "cuarentena"
         if unidades:
+            _soltar_ofertas_por_retiro(s, [u.id for u in unidades])
             log.warning("Retiro: %d unidades sacadas de circulacion (%d reservas soltadas)",
                         len(unidades), len(soltadas))
     return soltadas
+
+
+def _soltar_ofertas_por_retiro(s, unidad_ids: list[str]) -> None:
+    """Si el lote retirado estaba publicado, la oferta se cancela en el proximo tick.
+
+    Savepoint: si la migracion E3 no corrio, el retiro igual deja la unidad en cuarentena.
+    """
+    from app.mercado.modelos import OfertaMercado, OfertaUnidad
+
+    try:
+        with s.begin_nested():
+            links = list(s.scalars(
+                select(OfertaUnidad).where(OfertaUnidad.unidad_id.in_(unidad_ids))
+            ))
+            oferta_ids = {link.oferta_id for link in links}
+            for link in links:
+                s.delete(link)
+            s.flush()
+            for oferta_id in oferta_ids:
+                oferta = s.get(OfertaMercado, oferta_id)
+                if oferta is not None and oferta.estado in _ESTADOS_OFERTA_VIVA:
+                    oferta.estado = "cancelando"
+    except ProgrammingError:
+        log.warning("Tablas de mercado sin migrar; el retiro no cancela ofertas")
 
 
 def poner_en_cuarentena(unidad_id: str) -> bool:
@@ -623,3 +685,104 @@ def desasignar_retirada(unidad_id: str) -> int | None:
             return None
         s.delete(vu)
         return vu.venta_id
+
+
+# ---------------------------------------------------------------------------
+# Mercado: apartar unidades de una oferta de venta y cerrar la venta
+# ---------------------------------------------------------------------------
+
+def ids_en_oferta_abierta() -> set[str]:
+    from app.mercado.modelos import OfertaMercado, OfertaUnidad
+
+    with SessionLocal() as s:
+        return set(s.scalars(
+            select(OfertaUnidad.unidad_id)
+            .join(OfertaMercado, OfertaMercado.id == OfertaUnidad.oferta_id)
+            .where(OfertaMercado.estado.in_(_ESTADOS_OFERTA_VIVA))
+        ))
+
+
+def ids_de_oferta(oferta_id: str) -> list[str]:
+    from app.mercado.modelos import OfertaUnidad
+
+    with SessionLocal() as s:
+        return list(s.scalars(
+            select(OfertaUnidad.unidad_id).where(OfertaUnidad.oferta_id == oferta_id)
+        ))
+
+
+def apartar_para_oferta(oferta_id: str, unidad_ids: list[str]) -> None:
+    """Reserva las unidades para una oferta de venta. Si alguna no esta en_stock,
+    no aparta ninguna."""
+    from app.mercado.modelos import OfertaUnidad
+
+    with SessionLocal.begin() as s:
+        unidades = list(s.scalars(
+            select(Unidad).where(Unidad.id.in_(unidad_ids)).with_for_update()
+        ))
+        if len(unidades) != len(set(unidad_ids)) or any(u.estado != "en_stock" for u in unidades):
+            raise ValueError("no se puede apartar: alguna unidad ya no esta en stock")
+        for u in unidades:
+            s.add(OfertaUnidad(oferta_id=oferta_id, unidad_id=u.id))
+            u.estado = "reservada"
+
+
+def liberar_oferta(oferta_id: str) -> list[str]:
+    """Suelta las unidades que sigan reservadas. No toca cuarentena ni despachadas."""
+    from app.mercado.modelos import OfertaUnidad
+
+    with SessionLocal.begin() as s:
+        links = list(s.scalars(
+            select(OfertaUnidad).where(OfertaUnidad.oferta_id == oferta_id)
+        ))
+        ids = []
+        for link in links:
+            u = s.get(Unidad, link.unidad_id)
+            if u is not None and u.estado == "reservada":
+                u.estado = "en_stock"
+                ids.append(u.id)
+            s.delete(link)
+        return ids
+
+
+def cerrar_venta_mercado(unidad_ids: list[str], sku: str, cantidad: int, precio: int,
+                         order_id: str, contraparte: int | None) -> int:
+    """Marca la venta de mercado como despachada. Idempotente por order_id."""
+    from app.mercado.modelos import OfertaUnidad
+
+    with SessionLocal.begin() as s:
+        existente = s.scalar(select(Venta).where(Venta.transaccion_id == order_id))
+        if existente is not None:
+            return existente.id
+        v = Venta(
+            comprador_nombre=str(contraparte) if contraparte is not None else "mercado",
+            comprador_email=None,
+            total=int(precio) * int(cantidad),
+            canal="mercado",
+            orden_externa_id=order_id,
+            transaccion_id=order_id,
+            estado="orden_compra",
+        )
+        s.add(v)
+        s.flush()
+        s.add(VentaItem(venta_id=v.id, sku=sku, cantidad=cantidad, precio_unitario=precio))
+        ahora = _ahora()
+        for uid in unidad_ids:
+            u = s.get(Unidad, uid)
+            if u is None or u.estado == "despachada":
+                continue
+            ya = s.scalar(select(VentaUnidad).where(VentaUnidad.unidad_id == uid))
+            if ya is None:
+                s.add(VentaUnidad(
+                    venta_id=v.id, unidad_id=uid, lote_id=u.lote_id,
+                    estado="despachada", despachada_en=ahora,
+                ))
+            s.add(Movimiento(
+                unidad_id=uid, lote_id=u.lote_id, tipo="despacho",
+                desde=u.espacio_actual, hacia=None, venta_id=v.id,
+            ))
+            u.estado = "despachada"
+            u.espacio_actual = None
+        for link in s.scalars(select(OfertaUnidad).where(OfertaUnidad.unidad_id.in_(unidad_ids or [""]))):
+            s.delete(link)
+        return v.id
