@@ -7,3 +7,4 @@
 | [01_enunciado_proyecto_llm.md](01_enunciado_proyecto_llm.md) | Requisitos oficiales reestructurados para el LLM |
 | [diagramas.md](diagramas.md) / [img/](img/) | Secuencias y ER; PNG para Word |
 | `Proyecto - Entrega 1.pdf` | Enunciado original del curso |
+| [e3/informe-entrega3.md](e3/informe-entrega3.md) | Informe de diseño de la Entrega 3 (borrador) |
