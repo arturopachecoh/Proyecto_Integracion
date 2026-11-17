@@ -27,12 +27,13 @@ def dentro_de_banda(precio: int, vigente: int) -> bool:
 
 
 def siguiente_precio_venta(vigente: int, expiradas_seguidas: int) -> int:
-    """Parte en 1,0x y baja 0,1x por cada oferta de venta seguida que expiro.
+    """Parte en 1,4x y baja 0,1x por cada oferta de venta seguida que expiro:
+    vender caro es lo que da margen, y si no se vende baja solo.
 
     No baja de 0,5x ni sube de 1,5x.
     """
     bajo, alto = banda(vigente)
-    factor = max(0.5, 1.0 - 0.1 * max(0, expiradas_seguidas))
+    factor = max(0.5, 1.4 - 0.1 * max(0, expiradas_seguidas))
     return min(alto, max(bajo, _redondear(vigente * factor)))
 
 
