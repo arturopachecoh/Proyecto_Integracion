@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from app import catalogo, custodia, facturacion, salud, trazabilidad, ventas
+from app import billing_client, catalogo, custodia, facturacion, salud, trazabilidad, ventas
 from app.config import FARMA_ENV, PUBLIC_BASE_URL
 from app.db import db_ok
 from app.integrations.checkout import resultado_mock
@@ -67,7 +67,10 @@ def api_salud_pedidos():
 
 @app.get("/api/facturacion/resumen")
 def api_facturacion_resumen():
-    return facturacion.resumen()
+    try:
+        return facturacion.resumen()
+    except billing_client.SoapError as e:  # SOAP caido o con limite de llamadas
+        raise HTTPException(status_code=503, detail=f"Facturacion no disponible: {e}") from e
 
 
 @app.get("/api/catalogo")

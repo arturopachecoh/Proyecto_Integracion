@@ -44,9 +44,11 @@ PUBSUB_KEY_FILE = os.getenv("PUBSUB_KEY_FILE", f"keys/pubsub-{FARMA_ENV}.json")
 
 # Pedidos
 MARGEN_DESPACHO_MIN = int(os.getenv("MARGEN_DESPACHO_MIN", "20"))
-STOCK_MINIMO_DEFAULT = int(os.getenv("STOCK_MINIMO_DEFAULT", "5"))
+# E3: 2 + 1 por kit. Con 5 + 2 el arranque compraba de mas y llenaba la bodega en 1 h;
+# reponer un kit toma ~15 min y la OC da ~2 h de plazo, asi que 3 alcanza.
+STOCK_MINIMO_DEFAULT = int(os.getenv("STOCK_MINIMO_DEFAULT", "2"))
 STOCK_MINIMO = os.getenv("STOCK_MINIMO", "")  # excepciones: "KIT-DIABETES=2,KIT-GASTRO=4"
-STOCK_EXTRA_PORTAL = int(os.getenv("STOCK_EXTRA_PORTAL", "2"))  # sobre el minimo, para vender en el portal
+STOCK_EXTRA_PORTAL = int(os.getenv("STOCK_EXTRA_PORTAL", "1"))  # sobre el minimo, para vender en el portal
 
 # Webhooks firmados por Google (token OIDC de una cuenta de servicio del curso)
 GCP_PROYECTO_CURSO = "taller-integracion-310700"

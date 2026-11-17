@@ -15,7 +15,7 @@ from app.models import OrdenCompra
 
 log = logging.getLogger("facturacion")
 
-MAX_POR_TICK = 20  # el SOAP acepta 60 llamadas por minuto
+MAX_POR_TICK = 10  # el SOAP acepta 60 llamadas por minuto: 10 emisiones + 10 pagos + listas
 
 
 def por_facturar(limite=MAX_POR_TICK):
@@ -46,6 +46,9 @@ def emitir_pendientes():
             _guardar(oc_id, factura_id=f["id"], factura_error=None)
             log.info("OC %s facturada: %s por $%.0f (%s)", oc_id, f["id"], f["price"], f["status"])
         except billing_client.SoapError as e:
+            if e.codigo == "HTTP 429":  # Farma pide esperar: se sigue en el proximo tick
+                log.warning("SOAP con limite de llamadas; se sigue en el proximo tick")
+                break
             if e.codigo == "DUPLICATE_OPERATION":
                 _guardar(oc_id, factura_id="duplicada", factura_error=None)
                 log.info("OC %s ya estaba facturada", oc_id)
@@ -68,6 +71,9 @@ def pagar_pendientes():
             log.info("Factura %s pagada (%s): $%.0f + interes $%.0f",
                      f["id"], f["channel"], pagada["price"], pagada["interest"])
         except billing_client.SoapError as e:
+            if e.codigo == "HTTP 429":  # Farma pide esperar: se sigue en el proximo tick
+                log.warning("SOAP con limite de llamadas; se sigue en el proximo tick")
+                break
             log.warning("Factura %s no se pudo pagar: %s", f["id"], e)
 
 

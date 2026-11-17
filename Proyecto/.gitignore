@@ -1,5 +1,7 @@
 # Credenciales: nunca al repo (usar .env.example como plantilla)
 .env
+.env.*
+!.env.example
 
 # Llaves de Pub/Sub y known_hosts del sFTP: nunca al repo
 keys/
