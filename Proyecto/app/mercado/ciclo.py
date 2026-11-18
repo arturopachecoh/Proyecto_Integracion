@@ -114,7 +114,7 @@ def _vender(sku: str, gastar, stats: dict) -> None:
         o for o in trades_client.listar_ofertas(sku=sku, side="buy", estado="abierta")
         if o.get("group") != config.FARMA_GROUP
         and not registro.existe(o.get("id") or "")
-        and 0 < int(o.get("quantity") or 0) <= custodia.stock_disponible(sku)
+        and 0 < int(o.get("quantity") or 0) <= _excedente(sku)  # sin tocar la reserva para fabricar
         and (o.get("unitPrice") or 0) >= minimo
     ]
     if compras:
@@ -126,9 +126,9 @@ def _vender(sku: str, gastar, stats: dict) -> None:
         mejor = max(compras, key=lambda o: int(o["unitPrice"]))
         if acciones.aceptar_compra_ajena(mejor):
             stats["aceptadas"].append(mejor["id"])
-    # 2. Tener stock para revender: si baja de un lote, se le compra uno a Farma
+    # 2. Tener stock para revender: si baja de la reserva + un lote, se le compra uno a Farma
     lote = operaciones.tamano_lote(sku)
-    if custodia.stock_disponible(sku) + custodia.en_camino(sku) < lote:
+    if custodia.stock_disponible(sku) + custodia.en_camino(sku) < _reserva(sku) + lote:
         operaciones.comprar(sku, lote)
         log.info("Compre %d x %s a Farma para revender", lote, sku)
     # 3. Publicar una venta chica, una abierta por SKU
@@ -152,6 +152,13 @@ def _faltante(sku: str) -> int:
     return max(0, config.MERCADO_OBJETIVO - tengo)
 
 
+def _reserva(sku: str) -> int:
+    """Lo que se guarda para fabricar: 3 tandas de la receta que mas usa este insumo."""
+    tanda = max((c["req"] * d["production"]["batch"] for d in operaciones.catalogo().values()
+                 for c in d["components"] if c["sku"] == sku), default=0)
+    return max(config.MERCADO_LOTE, 3 * tanda)
+
+
 def _excedente(sku: str) -> int:
-    """Deja un lote para fabricar antes de publicar una venta."""
-    return max(0, custodia.stock_disponible(sku) - config.MERCADO_LOTE)
+    """Solo se vende lo que sobra despues de la reserva para fabricar."""
+    return max(0, custodia.stock_disponible(sku) - _reserva(sku))
