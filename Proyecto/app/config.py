@@ -49,6 +49,8 @@ MARGEN_DESPACHO_MIN = int(os.getenv("MARGEN_DESPACHO_MIN", "20"))
 STOCK_MINIMO_DEFAULT = int(os.getenv("STOCK_MINIMO_DEFAULT", "2"))
 STOCK_MINIMO = os.getenv("STOCK_MINIMO", "")  # excepciones: "KIT-DIABETES=2,KIT-GASTRO=4"
 STOCK_EXTRA_PORTAL = int(os.getenv("STOCK_EXTRA_PORTAL", "1"))  # sobre el minimo, para vender en el portal
+# Kits que no se reponen: CARDIO paga menos de lo que cuesta y gasta 22 lactosa por kit
+NO_FABRICAR = {s.strip() for s in os.getenv("NO_FABRICAR", "").split(",") if s.strip()}
 
 # Webhooks firmados por Google (token OIDC de una cuenta de servicio del curso)
 GCP_PROYECTO_CURSO = "taller-integracion-310700"

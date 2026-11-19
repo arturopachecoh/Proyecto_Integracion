@@ -7,14 +7,14 @@ baja y el reponedor fabrica mas. El portal solo vende sobre el minimo, por eso
 se fabrica un extra para que no aparezca todo agotado.
 """
 from app import custodia, stock
-from app.config import STOCK_EXTRA_PORTAL
+from app.config import NO_FABRICAR, STOCK_EXTRA_PORTAL
 from app.operaciones import catalogo
 
 
 def faltantes() -> dict[str, int]:
     faltan: dict[str, int] = {}
     for sku, prod in catalogo().items():
-        if not prod.get("sellable"):
+        if not prod.get("sellable") or sku in NO_FABRICAR:
             continue
         n = (stock.minimo(sku) + STOCK_EXTRA_PORTAL + stock.comprometido(sku)
              - custodia.stock_disponible(sku) - custodia.en_camino(sku))
