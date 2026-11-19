@@ -38,8 +38,9 @@ def siguiente_precio_venta(vigente: int, expiradas_seguidas: int) -> int:
 
 
 def precio_compra(vigente: int) -> int:
-    """Oferta de compra al precio vigente (1,0x): al piso de la banda nadie la acepta."""
-    return vigente
+    """Oferta de compra al techo de la banda (1,5x): con las OC nuevas conviene pagar
+    caro el insumo escaso antes que rechazar una OC."""
+    return int(vigente * 1.5)
 
 
 def vigente(sku: str) -> int | None:
